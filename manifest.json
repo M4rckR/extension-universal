@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Target Inspector",
+  "version": "2.1.0",
+  "description": "Intercepta llamadas de personalización de Adobe Target/Alloy en cualquier sitio",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "assets/icon16.svg",
+    "48": "assets/icon48.svg",
+    "128": "assets/icon128.svg"
+  },
+  "action": {
+    "default_title": "Target Inspector",
+    "default_icon": {
+      "16": "assets/icon16.svg",
+      "48": "assets/icon48.svg",
+      "128": "assets/icon128.svg"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

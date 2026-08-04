@@ -1,0 +1,1305 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Target Inspector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ── Tokens de color (paleta neutra) ─────────────────── */
+      :root {
+        --ui-primary-700: #1e293b;
+        --ui-primary-500: #334155;
+        --ui-primary-400: #4f46e5;
+        --ui-primary-100: #c7d2fe;
+        --ui-primary-040: #eef2ff;
+        --ui-secondary-500: #6366f1;
+        --ui-analogous-300: #38bdf8;
+        --ui-surface: #f1f5f9;
+        --ui-on-text: #1e293b;
+        --ui-onsurface-900: #475569;
+        --ui-onsurface-400: #94a3b8;
+        --ui-onsurface-100: #e2e8f0;
+        --ui-onsurface-040: #f8fafc;
+        --vec-color: #c0392b;
+        --vec-bg: #fdecea;
+        --mbox-color: #1a7a52;
+        --mbox-bg: #eaf6f0;
+      }
+
+      /* ── Reset ───────────────────────────────────────────── */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "IBM Plex Sans", sans-serif;
+        width: 480px;
+        background: #fff;
+        color: var(--ui-on-text);
+        font-size: 13px;
+      }
+
+      /* ── Header ──────────────────────────────────────────── */
+      .header {
+        background: var(--ui-primary-700);
+        padding: 13px 16px 0;
+        position: relative;
+      }
+      .header__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 10px;
+      }
+      .header__left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .header__logo {
+        width: 30px;
+        height: 30px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .header__logo img {
+        width: 20px;
+        height: 20px;
+      }
+      .header__title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #fff;
+      }
+      .header__subtitle {
+        font-size: 10px;
+        color: var(--ui-primary-100);
+        font-family: "IBM Plex Mono", monospace;
+        margin-top: 1px;
+      }
+      .header__right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .header__count {
+        background: var(--ui-secondary-500);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-family: "IBM Plex Mono", monospace;
+        letter-spacing: 0.06em;
+      }
+
+      /* Botón utilitario — no pertenece a un bloque específico */
+      .btn-clear {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: #fff;
+        font-size: 10px;
+        padding: 3px 9px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: "IBM Plex Mono", monospace;
+        transition: all 0.15s;
+      }
+      .btn-clear:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      /* ── Modo ventana independiente ───────────────────────
+         Sin default_popup, este documento SIEMPRE se abre así (ver
+         background.js) — pero el selector body.window-mode se deja
+         condicional en vez de aplicar estas reglas directo a body, por si
+         popup.html se abre alguna vez sin ?tabId= (ver getInspectedTab).
+         Relaja el ancho fijo y el tope de altura de las listas para
+         aprovechar una ventana redimensionable. */
+      body.window-mode {
+        width: 100%;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      body.window-mode .panel--active {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      body.window-mode .list {
+        max-height: none;
+        flex: 1;
+      }
+
+      /* ── Tabs ────────────────────────────────────────────── */
+      .tabs {
+        display: flex;
+      }
+      .tabs__item {
+        padding: 9px 20px;
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.4);
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        transition: all 0.15s;
+        user-select: none;
+        letter-spacing: 0.02em;
+      }
+      .tabs__item--active {
+        color: #fff;
+        border-bottom-color: var(--ui-secondary-500);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .tabs__item:hover:not(.tabs__item--active) {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      /* ── URL bar ─────────────────────────────────────────── */
+      .url-bar {
+        background: var(--ui-primary-040);
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        padding: 6px 16px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .url-bar__indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--mbox-color);
+        flex-shrink: 0;
+        animation: pulse 2.5s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+      .url-bar__text {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10px;
+        color: var(--ui-onsurface-900);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* ── Panels ──────────────────────────────────────────── */
+      .panel {
+        display: none;
+      }
+      .panel--active {
+        display: block;
+      }
+
+      /* ── Stats (pestaña mBoxes) ──────────────────────────── */
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      .stats__item {
+        padding: 14px 16px 12px;
+        text-align: center;
+        border-right: 1px solid var(--ui-onsurface-100);
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        position: relative;
+      }
+      .stats__item:last-child {
+        border-right: none;
+      }
+
+      /* Barra de color superior de cada stat */
+      .stats__item::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+      }
+      .stats__item--active::before {
+        background: var(--ui-secondary-500);
+      }
+      .stats__item--free::before {
+        background: #1a7a52;
+      }
+      .stats__item--total::before {
+        background: var(--ui-primary-400);
+      }
+
+      .stats__number {
+        font-size: 28px;
+        font-weight: 700;
+        font-family: "IBM Plex Mono", monospace;
+        line-height: 1;
+      }
+      .stats__label {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ui-onsurface-400);
+        margin-top: 5px;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      /* Color del número según tipo de stat */
+      .stats__item--active .stats__number {
+        color: var(--ui-secondary-500);
+      }
+      .stats__item--free .stats__number {
+        color: #1a7a52;
+      }
+      .stats__item--total .stats__number {
+        color: var(--ui-primary-500);
+      }
+
+      /* ── Lista scrollable ────────────────────────────────── */
+      .list {
+        max-height: 340px;
+        overflow-y: auto;
+      }
+      .list::-webkit-scrollbar {
+        width: 3px;
+      }
+      .list::-webkit-scrollbar-thumb {
+        background: var(--ui-onsurface-100);
+        border-radius: 2px;
+      }
+
+      /* ── Fila de actividad ───────────────────────────────── */
+      .activity {
+        padding: 10px 16px 11px;
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        transition: background 0.1s;
+      }
+      .activity:nth-child(even) {
+        background: var(--ui-onsurface-040);
+      }
+      .activity:nth-child(odd) {
+        background: #fff;
+      }
+      .activity:hover {
+        background: var(--ui-primary-040);
+      }
+      .activity:last-child {
+        border-bottom: none;
+      }
+
+      /* ── Etiqueta de scope (VEC / mbox) ─────────────────── */
+      .scope-tag {
+        display: inline-block;
+        margin-bottom: 4px;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: "IBM Plex Mono", monospace;
+        white-space: nowrap;
+      }
+      .scope-tag--vec {
+        background: var(--vec-bg);
+        color: var(--vec-color);
+        border: 1px solid rgba(192, 57, 43, 0.15);
+      }
+      .scope-tag--mbox {
+        background: var(--mbox-bg);
+        color: var(--mbox-color);
+        border: 1px solid rgba(26, 122, 82, 0.15);
+      }
+
+      /* ── Detalle de la actividad ─────────────────────────── */
+      .activity__name {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ui-on-text);
+        line-height: 1.4;
+      }
+      .activity__meta {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 3px;
+        flex-wrap: wrap;
+      }
+      .activity__id {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+      }
+      .activity__experience {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-analogous-300);
+        font-weight: 500;
+      }
+      .activity__separator {
+        color: var(--ui-onsurface-400);
+        font-size: 9px;
+      }
+      .activity__type {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        font-weight: 700;
+      }
+      .activity__type--ab {
+        color: #7c3aed;
+      }
+      .activity__type--xt {
+        color: var(--ui-secondary-500);
+      }
+
+      /* Link clickable que abre la actividad en Adobe Target */
+      .activity__link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+      }
+      .activity__link:hover .activity__name {
+        color: var(--ui-primary-500);
+        text-decoration: underline;
+      }
+      .activity__link:hover .activity__open-hint {
+        opacity: 1;
+      }
+      .activity__link--plain {
+        display: block;
+      }
+      .activity__open-hint {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-primary-400);
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+
+      /* Botones de adivinanza cuando el tipo AB/XT es desconocido */
+      .activity__guesses {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .guess-btn {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 2px 8px;
+        border-radius: 3px;
+        text-decoration: none;
+        transition: opacity 0.15s;
+      }
+      .guess-btn:hover {
+        opacity: 0.75;
+      }
+      .guess-btn--ab {
+        background: #ede9fe;
+        color: #7c3aed;
+        border: 1px solid rgba(124, 58, 237, 0.2);
+      }
+      .guess-btn--xt {
+        background: #fff3e0;
+        color: var(--ui-secondary-500);
+        border: 1px solid rgba(255, 120, 0, 0.2);
+      }
+
+      /* ── Fila de mbox ────────────────────────────────────── */
+      .mbox-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        transition: background 0.1s;
+        gap: 12px;
+      }
+      .mbox-row:nth-child(even) {
+        background: var(--ui-onsurface-040);
+      }
+      .mbox-row:nth-child(odd) {
+        background: #fff;
+      }
+      .mbox-row:hover {
+        background: var(--ui-primary-040);
+      }
+      .mbox-row:last-child {
+        border-bottom: none;
+      }
+
+      .mbox-row__info {
+        flex: 1;
+        min-width: 0;
+      }
+      .mbox-row__name {
+        font-size: 11px;
+        font-weight: 600;
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--ui-on-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbox-row__activity {
+        font-size: 10px;
+        color: var(--ui-onsurface-900);
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbox-row__status {
+        flex-shrink: 0;
+      }
+
+      /* ── Badge de estado del mbox ────────────────────────── */
+      .status-badge {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 20px;
+        white-space: nowrap;
+      }
+      .status-badge--active {
+        background: #fff3e0;
+        color: var(--ui-secondary-500);
+        border: 1px solid rgba(255, 120, 0, 0.25);
+      }
+      .status-badge--free {
+        background: #eaf6f0;
+        color: #1a7a52;
+        border: 1px solid rgba(26, 122, 82, 0.25);
+      }
+      .status-badge--alloy {
+        background: #fff3e0;
+        color: var(--ui-secondary-500);
+        border: 1px solid rgba(255, 120, 0, 0.25);
+      }
+
+      /* ── Chips de filtro por event name (pestaña Eventos) ── */
+      .event-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        background: var(--ui-surface);
+      }
+      .event-filter {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 3px 9px;
+        border-radius: 20px;
+        border: 1px solid var(--ui-onsurface-100);
+        background: #fff;
+        color: var(--ui-onsurface-400);
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .event-filter:hover {
+        border-color: var(--ui-primary-400);
+      }
+      .event-filter--active {
+        background: var(--ui-primary-040);
+        color: var(--ui-primary-500);
+        border-color: rgba(0, 48, 179, 0.25);
+      }
+
+      /* ── Sección de página del recorrido (pestaña Eventos) ────────
+         Nivel único de nesting: colapsar la página oculta TODO su contenido
+         de una vez, incluidos los .event-group de abajo — nunca queda un
+         árbol de tres niveles de toggles anidados. */
+      .event-page {
+        border-bottom: 1px solid var(--ui-onsurface-100);
+      }
+      .event-page:last-child {
+        border-bottom: none;
+      }
+      .event-page__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 16px;
+        background: var(--ui-onsurface-040);
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid var(--ui-onsurface-100);
+      }
+      .event-page__header:hover {
+        background: var(--ui-primary-040);
+      }
+      .event-page__chevron {
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+      .event-page--expanded .event-page__chevron {
+        transform: rotate(90deg);
+      }
+      .event-page__path {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--ui-on-text);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .event-page__count {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+        flex-shrink: 0;
+      }
+      .event-page__current {
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ui-primary-500);
+        background: var(--ui-primary-040);
+        border: 1px solid rgba(0, 48, 179, 0.2);
+        padding: 1px 5px;
+        border-radius: 3px;
+        flex-shrink: 0;
+      }
+      .event-page__items {
+        display: none;
+      }
+      .event-page--expanded .event-page__items {
+        display: block;
+      }
+
+      /* ── Grupo de eventos consecutivos colapsado (pestaña Eventos) ─ */
+      .event-group {
+        border-bottom: 1px solid var(--ui-onsurface-100);
+      }
+      .event-group:last-child {
+        border-bottom: none;
+      }
+      .event-group__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px 11px;
+        cursor: pointer;
+        transition: background 0.1s;
+        user-select: none;
+      }
+      .event-group__header:hover {
+        background: var(--ui-primary-040);
+      }
+      .event-group__header .event-row__time {
+        flex: 1;
+      }
+      .event-group__chevron {
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+        transition: transform 0.15s;
+      }
+      .event-group--expanded .event-group__chevron {
+        transform: rotate(90deg);
+      }
+      .event-group__items {
+        display: none;
+        background: var(--ui-onsurface-040);
+      }
+      .event-group--expanded .event-group__items {
+        display: block;
+      }
+      .event-group__items .event-row {
+        padding-left: 28px;
+      }
+
+      /* ── Fila de evento (pestaña Eventos) ────────────────── */
+      .event-row {
+        padding: 10px 16px 11px;
+        border-bottom: 1px solid var(--ui-onsurface-100);
+        transition: background 0.1s;
+      }
+      .event-row:nth-child(even) {
+        background: var(--ui-onsurface-040);
+      }
+      .event-row:nth-child(odd) {
+        background: #fff;
+      }
+      .event-row:hover {
+        background: var(--ui-primary-040);
+      }
+      .event-row:last-child {
+        border-bottom: none;
+      }
+      .event-row__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .event-tag {
+        display: inline-block;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: "IBM Plex Mono", monospace;
+        background: var(--ui-primary-040);
+        color: var(--ui-primary-500);
+        border: 1px solid rgba(0, 48, 179, 0.15);
+        white-space: nowrap;
+      }
+      .event-row__time {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .event-row__title {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ui-on-text);
+        line-height: 1.4;
+      }
+      .event-row__meta {
+        font-size: 10px;
+        color: var(--ui-onsurface-900);
+        margin-top: 2px;
+      }
+      .event-row__raw {
+        margin-top: 6px;
+      }
+
+      /* ── Bloques compartidos de payload/contenido crudo (Eventos y
+         Actividades usan el mismo <summary>/<pre> monoespaciado) ─── */
+      .raw-summary {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-primary-400);
+        cursor: pointer;
+        user-select: none;
+      }
+      .raw-pre {
+        margin-top: 5px;
+        padding: 8px;
+        background: var(--ui-onsurface-040);
+        border-radius: 4px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 160px;
+        overflow-y: auto;
+        color: var(--ui-on-text);
+      }
+
+      /* ── Contenido expandible de una actividad (pestaña Actividades) ─ */
+      .activity__content {
+        margin-top: 8px;
+      }
+      .activity__content-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin-top: 6px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-onsurface-900);
+      }
+      .activity__content-field b {
+        color: var(--ui-onsurface-400);
+        font-weight: 600;
+        margin-right: 3px;
+      }
+      .activity__content-note {
+        margin-top: 5px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        color: var(--ui-secondary-500);
+      }
+      .btn-copy-content {
+        display: block;
+        margin-top: 6px;
+        background: var(--ui-primary-040);
+        color: var(--ui-primary-500);
+        border: 1px solid rgba(0, 48, 179, 0.15);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 3px 9px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-copy-content:hover {
+        background: var(--ui-primary-100);
+      }
+
+      /* ── Estado vacío ────────────────────────────────────── */
+      .empty-state {
+        padding: 44px 0;
+        text-align: center;
+      }
+      .empty-state__icon {
+        font-size: 30px;
+        display: block;
+        margin-bottom: 10px;
+      }
+      .empty-state__text {
+        font-size: 12px;
+        line-height: 1.7;
+        color: var(--ui-onsurface-900);
+      }
+
+      /* Botón para reinyectar inject.js/content.js en pestañas que ya
+         estaban abiertas antes de recargar la extensión (evita el reload manual) */
+      .btn-inject {
+        margin-top: 14px;
+        background: var(--ui-primary-500);
+        color: #fff;
+        border: none;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: "IBM Plex Mono", monospace;
+        letter-spacing: 0.04em;
+        padding: 7px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-inject:hover {
+        background: var(--ui-primary-400);
+      }
+
+      /* ── Footer ──────────────────────────────────────────── */
+      .footer {
+        background: var(--ui-surface);
+        border-top: 1px solid var(--ui-onsurface-100);
+        padding: 6px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .footer__note {
+        font-size: 9px;
+        color: var(--ui-onsurface-400);
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      /* ── Barra de tenant de Adobe Target ─────────────────── */
+      .tenant-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 16px;
+        background: var(--ui-onsurface-040);
+        border-top: 1px solid var(--ui-onsurface-100);
+      }
+      .tenant-bar__label {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--ui-onsurface-900);
+        white-space: nowrap;
+      }
+      .tenant-bar__input {
+        flex: 1;
+        min-width: 0;
+        font-size: 11px;
+        font-family: "IBM Plex Mono", monospace;
+        color: var(--ui-on-text);
+        padding: 4px 8px;
+        border: 1px solid var(--ui-onsurface-100);
+        border-radius: 4px;
+        background: #fff;
+      }
+      .tenant-bar__input:focus {
+        outline: none;
+        border-color: var(--ui-primary-400);
+      }
+      .tenant-bar__input::placeholder {
+        color: var(--ui-onsurface-400);
+      }
+
+      /* ── Banner QA (persistente, todas las pestañas) ──────── */
+      .qa-banner {
+        display: none;
+        background: var(--vec-bg);
+        border-bottom: 1px solid rgba(192, 57, 43, 0.25);
+        border-left: 3px solid var(--vec-color);
+        padding: 9px 14px 9px 12px;
+        gap: 10px;
+        align-items: flex-start;
+      }
+      .qa-banner--visible {
+        display: flex;
+      }
+      .qa-banner__icon {
+        font-size: 14px;
+        line-height: 1.3;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .qa-banner__body {
+        flex: 1;
+        min-width: 0;
+      }
+      .qa-banner__headline {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--vec-color);
+        line-height: 1.4;
+      }
+      .qa-banner__detail {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9.5px;
+        color: #8a3226;
+        margin-top: 4px;
+        line-height: 1.6;
+      }
+      .qa-banner__actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .qa-banner__exit {
+        flex: 1;
+        background: var(--vec-color);
+        border: 1px solid var(--vec-color);
+        color: #fff;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        padding: 6px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .qa-banner__exit:hover {
+        background: #a53023;
+        border-color: #a53023;
+      }
+      .qa-banner__manage {
+        flex-shrink: 0;
+        background: transparent;
+        border: 1px solid rgba(192, 57, 43, 0.3);
+        color: var(--vec-color);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 6px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .qa-banner__manage:hover {
+        background: #fff;
+      }
+
+      /* ── Punto en la tab QA cuando está activa ────────────── */
+      .tabs__item--qa {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .tabs__qa-dot {
+        display: none;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--vec-color);
+        flex-shrink: 0;
+        box-shadow: 0 0 0 2px rgba(192, 57, 43, 0.35);
+      }
+
+      /* ── Pestaña QA ────────────────────────────────────────── */
+      .mono {
+        font-family: "IBM Plex Mono", monospace;
+      }
+      .qa-panel {
+        padding: 14px 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .qa-field__label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ui-onsurface-900);
+        margin-bottom: 6px;
+        display: block;
+      }
+      .qa-field__hint {
+        font-size: 10px;
+        color: var(--ui-onsurface-400);
+        margin-top: 5px;
+        line-height: 1.5;
+      }
+      .qa-textarea {
+        width: 100%;
+        min-height: 64px;
+        resize: vertical;
+        padding: 9px 10px;
+        border: 1px solid var(--ui-onsurface-100);
+        border-radius: 6px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10.5px;
+        color: var(--ui-on-text);
+        background: var(--ui-onsurface-040);
+        line-height: 1.5;
+      }
+      .qa-textarea:focus {
+        outline: none;
+        border-color: var(--ui-primary-400);
+        background: #fff;
+      }
+      .qa-error {
+        display: none;
+        margin-top: 7px;
+        font-size: 10.5px;
+        color: var(--vec-color);
+        background: var(--vec-bg);
+        border: 1px solid rgba(192, 57, 43, 0.2);
+        border-radius: 5px;
+        padding: 7px 9px;
+        line-height: 1.5;
+      }
+      .qa-error--visible {
+        display: block;
+      }
+      .qa-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-qa {
+        flex: 1;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .btn-qa--primary {
+        background: var(--ui-primary-500);
+        border: 1px solid var(--ui-primary-500);
+        color: #fff;
+      }
+      .btn-qa--primary:hover {
+        background: var(--ui-primary-400);
+      }
+      .btn-qa--ghost {
+        background: #fff;
+        border: 1px solid var(--ui-onsurface-100);
+        color: var(--ui-onsurface-900);
+      }
+      .btn-qa--ghost:hover {
+        border-color: var(--vec-color);
+        color: var(--vec-color);
+      }
+      .qa-divider {
+        height: 1px;
+        background: var(--ui-onsurface-100);
+      }
+      .qa-config {
+        display: none;
+        border: 1px solid var(--ui-onsurface-100);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .qa-config--visible {
+        display: block;
+      }
+      .qa-config__head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 12px;
+        background: var(--ui-onsurface-040);
+        border-bottom: 1px solid var(--ui-onsurface-100);
+      }
+      .qa-config__dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--vec-color);
+        flex-shrink: 0;
+      }
+      .qa-config__head-text {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--ui-onsurface-900);
+      }
+      .qa-config__body {
+        padding: 11px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .qa-config__row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .qa-config__row-label {
+        font-size: 10px;
+        color: var(--ui-onsurface-400);
+        flex-shrink: 0;
+      }
+      .qa-config__row-value {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10.5px;
+        color: var(--ui-on-text);
+        text-align: right;
+      }
+      .qa-config__row-value--forced {
+        color: var(--vec-color);
+        font-weight: 600;
+      }
+      .qa-mode__label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ui-onsurface-900);
+        margin-bottom: 7px;
+        display: block;
+      }
+      .qa-mode__seg {
+        display: flex;
+        gap: 6px;
+      }
+      .qa-mode__opt {
+        flex: 1;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 6px;
+        padding: 8px 10px;
+        border: 1px solid var(--ui-onsurface-100);
+        background: #fff;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .qa-mode__opt-title {
+        display: block;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: var(--ui-on-text);
+      }
+      .qa-mode__opt-desc {
+        display: block;
+        font-size: 9.5px;
+        color: var(--ui-onsurface-900);
+        margin-top: 3px;
+        line-height: 1.4;
+      }
+      .qa-mode__opt--active {
+        border-color: var(--ui-primary-500);
+        background: var(--ui-primary-040);
+      }
+      .qa-mode__opt--active .qa-mode__opt-title {
+        color: var(--ui-primary-500);
+      }
+      .qa-mode__opt:hover:not(.qa-mode__opt--active) {
+        border-color: var(--ui-onsurface-400);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header__top">
+        <div class="header__left">
+          <div class="header__logo">
+            <img src="assets/icon48.svg" alt="Target Inspector" />
+          </div>
+          <div>
+            <div class="header__title">Target Inspector</div>
+            <div class="header__subtitle">Adobe Target · Alloy Monitor</div>
+          </div>
+        </div>
+        <div class="header__right">
+          <span class="header__count" id="count">0 ACT</span>
+          <button class="btn-clear" id="clear">LIMPIAR</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <div class="tabs__item tabs__item--active" data-tab="actividades">
+          Actividades
+        </div>
+        <div class="tabs__item" data-tab="mboxes">mBoxes</div>
+        <div class="tabs__item" data-tab="eventos">Eventos</div>
+        <div class="tabs__item tabs__item--qa" data-tab="qa">
+          QA <span class="tabs__qa-dot" id="tab-qa-dot"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="qa-banner" id="qa-banner">
+      <div class="qa-banner__icon">⚠️</div>
+      <div class="qa-banner__body">
+        <div class="qa-banner__headline">
+          QA activo — no es un usuario real. Impresiones y conversiones no se miden.
+        </div>
+        <div class="qa-banner__detail" id="qa-banner-detail"></div>
+        <div class="qa-banner__actions">
+          <button
+            class="qa-banner__exit"
+            id="qa-banner-exit"
+            title="Borra la cookie at_qa_mode y recarga la página — vuelve a capturar tráfico real."
+          >
+            Salir de QA · recarga y captura real
+          </button>
+          <button class="qa-banner__manage" id="qa-banner-manage">Gestionar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="url-bar">
+      <div class="url-bar__indicator"></div>
+      <div class="url-bar__text" id="page-url">Sin página activa</div>
+    </div>
+
+    <div class="panel panel--active" id="panel-actividades">
+      <div class="list" id="list">
+        <div class="empty-state">
+          <span class="empty-state__icon">📡</span>
+          <p class="empty-state__text">
+            Sin capturas aún.<br />Recarga la página con la extensión activa.
+          </p>
+          <button class="btn-inject">Capturar ahora</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-mboxes">
+      <div class="stats">
+        <div class="stats__item stats__item--active">
+          <div class="stats__number" id="stat-active">—</div>
+          <div class="stats__label">En uso</div>
+        </div>
+        <div class="stats__item stats__item--free">
+          <div class="stats__number" id="stat-free">—</div>
+          <div class="stats__label">Libres</div>
+        </div>
+        <div class="stats__item stats__item--total">
+          <div class="stats__number" id="stat-total">—</div>
+          <div class="stats__label">Total DOM</div>
+        </div>
+      </div>
+      <div class="list" id="mbox-list">
+        <div class="empty-state">
+          <span class="empty-state__icon">📦</span>
+          <p class="empty-state__text">
+            Sin datos aún.<br />Recarga la página con la extensión activa.
+          </p>
+          <button class="btn-inject">Capturar ahora</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-eventos">
+      <div class="event-filters" id="event-filters"></div>
+      <div class="list" id="event-list">
+        <div class="empty-state">
+          <span class="empty-state__icon">🛰️</span>
+          <p class="empty-state__text">
+            Sin eventos aún.<br />Interactuá con la página para ver los
+            pushes de digitalData.
+          </p>
+          <button class="btn-inject">Capturar ahora</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-qa">
+      <div class="qa-panel">
+        <div>
+          <label class="qa-field__label">Link QA de Target</label>
+          <textarea
+            class="qa-textarea"
+            id="qa-link-input"
+            placeholder="Pegá acá el link QA que te pasó Target (con at_preview_token, at_preview_index…)"
+          ></textarea>
+          <div class="qa-error" id="qa-error"></div>
+          <div class="qa-field__hint" id="qa-hint">
+            Al activar, se escribe la cookie <span class="mono">at_qa_mode</span> en esta
+            pestaña y se recarga la página.
+          </div>
+        </div>
+
+        <div class="qa-actions">
+          <button class="btn-qa btn-qa--primary" id="qa-activate-btn">Activar QA</button>
+          <button class="btn-qa btn-qa--ghost" id="qa-clear-btn">Limpiar QA</button>
+        </div>
+
+        <div class="qa-divider" id="qa-divider" style="display: none"></div>
+
+        <div class="qa-config" id="qa-config">
+          <div class="qa-config__head">
+            <span class="qa-config__dot"></span>
+            <span class="qa-config__head-text" id="qa-config-head-text"></span>
+          </div>
+          <div class="qa-config__body" id="qa-config-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tenant-bar">
+      <label class="tenant-bar__label" for="tenant-input">Tenant Target</label>
+      <input
+        class="tenant-bar__input"
+        id="tenant-input"
+        type="text"
+        placeholder="slug de la org (experience.adobe.com/#/@…)"
+        autocomplete="off"
+        spellcheck="false"
+        title="Slug de la organización en la URL del admin de Adobe Target (no es el orgId). Vacío = sin deep-links."
+      />
+    </div>
+
+    <div class="footer">
+      <span class="footer__note" id="ts">—</span>
+      <span class="footer__note" id="edge-info">v2.1 · Target Inspector</span>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
