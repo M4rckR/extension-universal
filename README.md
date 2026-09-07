@@ -204,3 +204,4 @@ Squad Tarjeta de Crédito — BCP
 ### Colaboradores
 
 **Jose Perez** — idea original de la pestaña QA (activar/reaplicar/limpiar el modo preview de Target desde la extensión). El análisis de la cookie `at_qa_mode` y la implementación portada a este proyecto partieron de esa idea (ver "QA mode" en CLAUDE.md para el detalle técnico).
+# extension-universal
