@@ -1,18 +1,18 @@
 # Target Inspector
 
-Extensión de Chrome (Manifest V3) que intercepta y visualiza en tiempo real las actividades de **Adobe Target / Alloy SDK** y los eventos de **tracking (`window.digitalData`)** activos en la página actual. Funciona en **cualquier sitio** que use Adobe Web SDK (Alloy), no en un dominio específico. La captura es puramente observacional: no altera el data layer, no escribe cookies ni recarga la página.
+Extensión de Chrome (Manifest V3) que intercepta y visualiza en tiempo real las actividades de **Adobe Target / Alloy SDK** y los eventos de **tracking (`window.digitalData` y `window.adobeDataLayer`)** activos en la página actual. Funciona en **cualquier sitio** que use Adobe Web SDK (Alloy), no en un dominio específico. La captura es puramente observacional: no altera el data layer, no escribe cookies ni recarga la página.
 
 ---
 
 ## ¿Qué hace?
 
-Cuando Target responde a una llamada de personalización, o una offer hace `window.digitalData.push(...)`, la extensión captura el dato completo y lo muestra en una ventana independiente con tres vistas:
+Cuando Target responde a una llamada de personalización, o la página hace `push(...)` a su capa de datos (`window.digitalData` o `window.adobeDataLayer`), la extensión captura el dato completo y lo muestra en una ventana independiente con tres vistas:
 
 | Pestaña | Qué muestra |
 | --- | --- |
 | **Actividades** | Lista de actividades A/B y XT que Target activó, con nombre, ID, experiencia asignada y link directo a la UI de Adobe Target (el link aparece solo si configuraste el tenant en el footer — ver abajo). Cada actividad es **expandible**: si la decisión trae una offer `dom-action`, muestra `type`/`format`/`selector`/`prehidingSelector`/tamaño, un preview truncado del `content` (HTML/JS que la offer inserta), y un botón **Copiar completo** para pegar el contenido íntegro en un editor. Un click en el `#ID` de la actividad lo copia |
 | **mBoxes** | Todos los mboxes encontrados en la página, clasificados en *En uso* (Target respondió), *Libres* (existen en el DOM pero sin actividad asignada) y *Solo Alloy* (respondidos por Target pero sin elemento DOM con `data-mbox`), con una línea de resumen arriba que suma los tres. `__view__` (el scope del VEC) queda fuera de esta clasificación a propósito — en páginas 100% VEC (sin ningún mbox nombrado) esta pestaña avisa explícitamente que no hay mboxes en vez de sugerir que falta recargar |
-| **Eventos** | Pushes crudos a `window.digitalData` capturados en vivo — la capa de tracking *antes* de que Adobe Launch los procese. A diferencia de Actividades/mBoxes, **persiste a través de la navegación**: cada evento queda etiquetado con la página donde disparó, agrupados en secciones colapsables por página para poder recorrer el sitio y revisar después dónde disparó cada cosa. Dentro de cada página, eventos consecutivos del mismo tipo (p. ej. varios `trackScroll` seguidos) se colapsan en una fila `[nombre · N]` expandible; chips arriba de la lista filtran por nombre de evento en todo el recorrido, y un buscador filtra por texto (nombre, cualquier valor del payload o la página). Cada payload tiene **Copiar payload** |
+| **Eventos** | Pushes crudos a `window.digitalData` y `window.adobeDataLayer` (la capa de datos de Adobe, ACDL) capturados en vivo — la capa de tracking *antes* de que Adobe Launch los procese. A diferencia de Actividades/mBoxes, **persiste a través de la navegación**: cada evento queda etiquetado con la página donde disparó, agrupados en secciones colapsables por página para poder recorrer el sitio y revisar después dónde disparó cada cosa. Dentro de cada página, eventos consecutivos del mismo tipo (p. ej. varios `trackScroll` seguidos) se colapsan en una fila `[nombre · N]` expandible; chips arriba de la lista filtran por nombre de evento en todo el recorrido, y un buscador filtra por texto (nombre, cualquier valor del payload o la página). Cada payload tiene **Copiar payload** |
 
 También hay un footer con el `orgId`/`edgeConfigId` de la instancia de Alloy activa en la página, para confirmar que apunta al datastream correcto, y un campo para configurar el **tenant de Adobe Target**.
 
@@ -79,9 +79,10 @@ Cuatro piezas que se comunican en cadena:
 Página web (cualquier sitio con Alloy)
   │
   ├─ window.__alloyMonitors  ──► inject.js  (world: MAIN, document_start)
-  │    Intercepta respuestas de red de Alloy y llamadas a alloy('sendEvent')
+  │    Intercepta respuestas de red de Alloy y llamadas a sendEvent de cada instancia (window.__alloyNS)
   │    Escanea atributos [data-mbox] en el DOM (+ MutationObserver para SPAs)
-  │    Hookea window.digitalData.push (defineProperty en dos capas, ver abajo)
+  │    Hookea .push de window.digitalData y window.adobeDataLayer (defineProperty en dos capas)
+  │    Todo dentro de una función propia: no deja variables globales en la página
   │                         │
   │              window.postMessage({ source: 'mbox-inspector', ... })
   │                         │
@@ -111,14 +112,14 @@ background.js (service worker)
 
 ### ¿Por qué dos scripts en la página?
 
-- **`inject.js`** corre en `world: MAIN` (mismo contexto JS que la página), necesario para acceder a `window.alloy`, `window.__alloyMonitors` y `window.digitalData` antes de que la página los use.
+- **`inject.js`** corre en `world: MAIN` (mismo contexto JS que la página), necesario para acceder a las instancias de Alloy, `window.__alloyMonitors` y las capas de datos antes de que la página los use.
 - **`content.js`** corre en el mundo aislado de Chrome y es el único que puede usar `chrome.storage`. Actúa como puente entre ambos mundos vía `postMessage`.
 
-### Captura de `window.digitalData.push()`
+### Captura de `push()` en la capa de datos (`digitalData` / `adobeDataLayer`)
 
 En muchos sitios con Adobe Launch, `digitalData` es una instancia de **Adobe Client Data Layer (ACDL)**, no un array plano — tiene `.push`/`.getState`/`.addEventListener` propios, y ACDL se inicializa de forma asíncrona (vía Launch) reemplazando `.push` después de que la página carga. Por eso el hook es de **dos capas**, ambas con `Object.defineProperty` (nunca un `Proxy` recursivo genérico, no hace falta acá):
 
-1. Un accessor en `window.digitalData` → detecta cuando se (re)asigna el array completo.
+1. Un accessor en `window.digitalData` y en `window.adobeDataLayer` → detecta cuando se (re)asigna el array completo.
 2. Un accessor en la propiedad `.push` de ese array → captura tanto los pushes de las offers como el momento en que ACDL reemplaza `.push`, envolviendo esa nueva función en vez de perder el hook.
 
 Todo el bloque corre en `document_start` (antes que cualquier script de la página) y está envuelto en `try/catch`: si algo falla, se degrada a "no capturamos eventos" sin tocar el resto de `inject.js` ni el comportamiento real del data layer — es puramente observacional, nunca altera ni interrumpe la llamada real.
@@ -148,7 +149,7 @@ El manifest no tiene `default_popup`, así que `chrome.action.onClicked` dispara
 | Archivo | Rol |
 | --- | --- |
 | `manifest.json` | Configuración de la extensión (permisos, scripts, dominios, background) |
-| `inject.js` | Captura respuestas de Alloy, intercepta `window.alloy()` y `window.digitalData.push()` |
+| `inject.js` | Captura respuestas de Alloy, intercepta `sendEvent` de cada instancia de Alloy y `push()` en `window.digitalData` / `window.adobeDataLayer` |
 | `content.js` | Puente postMessage → chrome.storage; valida forma y tamaño de cada mensaje (cualquier script de la página puede postear el mismo formato) |
 | `background.js` | Service worker: `chrome.action.onClicked` crea/enfoca la ventana independiente (único entry point), reapunta la ventana si se hace click desde otra pestaña, limpieza del puntero al cerrarse la ventana |
 | `popup.html` | UI (estructura HTML + CSS con metodología BEM), montada solo dentro de la ventana independiente |
@@ -173,7 +174,7 @@ Todo se guarda localmente en `chrome.storage.local` (solo en tu navegador, nunca
 | --- | --- | --- | --- |
 | `requests` | Últimas respuestas de Target (payload completo + URL + timestamp) | 50 entradas | No — foto del estado actual |
 | `domMboxes` | Nombres de mboxes encontrados en el DOM o pedidos vía `decisionScopes` | 500 nombres | No — foto del estado actual |
-| `digitalDataEvents` | Pushes crudos a `window.digitalData` (payload + timestamp + tiempo desde carga + `pageUrl` de origen) | 500 entradas | **Sí** — es un recorrido, no una foto (ver el porqué del límite abajo) |
+| `digitalDataEvents` | Pushes crudos a `window.digitalData` / `window.adobeDataLayer` (payload + timestamp + tiempo desde carga + `pageUrl` de origen + `layer`) | 500 entradas | **Sí** — es un recorrido, no una foto (ver el porqué del límite abajo) |
 | `instanceInfo` | orgId/edgeConfigId/edgeDomain de la instancia de Alloy activa | — | No |
 | `inspectorWindow` | Puntero `{windowId, tabId, sourceTabId}` de la ventana independiente abierta, si hay una | — | — |
 | `tabUrl` | URL de la última página capturada (para detectar cambios de página) | — | — |

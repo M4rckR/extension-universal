@@ -277,6 +277,9 @@ function handleInjectedMessage(event) {
       time: new Date(ts).toISOString(),
       timeSincePageLoad: Number.isFinite(event.data.timeSincePageLoad) ? event.data.timeSincePageLoad : null,
       pageUrl: window.location.href,
+      // Capa de datos de origen (inject.js escucha digitalData y adobeDataLayer).
+      // Solo se aceptan esos dos nombres; cualquier otro valor se descarta.
+      layer: event.data.layer === "adobeDataLayer" ? "adobeDataLayer" : "digitalData",
     };
     enqueueStorageTask(async () => {
       const data = await safeStorageGet("digitalDataEvents");

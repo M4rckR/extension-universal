@@ -999,7 +999,7 @@ function renderEventRow(e) {
     <div class="event-row">
       <div class="event-row__header">
         <span class="event-tag">${escapeHtml(eventName)}</span>
-        <span class="event-row__time">${time}${sincePageLoad ? " · " + sincePageLoad : ""}</span>
+        <span class="event-row__time">${e.layer === "adobeDataLayer" ? "adobeDataLayer · " : ""}${time}${sincePageLoad ? " · " + sincePageLoad : ""}</span>
       </div>
       ${title ? `<div class="event-row__title">${escapeHtml(title)}</div>` : ""}
       ${meta.length ? `<div class="event-row__meta">${meta.map(escapeHtml).join(" · ")}</div>` : ""}
@@ -1090,7 +1090,7 @@ function renderEventGroupsHtml(events) {
 }
 
 /**
- * Renderiza la pestaña "Eventos": pushes crudos a window.digitalData
+ * Renderiza la pestaña "Eventos": pushes crudos a window.digitalData / window.adobeDataLayer
  * capturados por inject.js (ver hookPushProperty), más recientes primero,
  * agrupados por página del recorrido (ver groupEventsByPage) — la sección
  * de la página más reciente arranca expandida, el resto colapsado. Arriba
@@ -1111,7 +1111,7 @@ function renderEventos() {
       filters.innerHTML = "";
       list.innerHTML = emptyStateHtml(
         "list",
-        "Sin eventos aún.<br>Interactúa con la página para ver los pushes de digitalData.",
+        "Sin eventos aún.<br>Interactúa con la página para ver los pushes a la capa de datos (digitalData o adobeDataLayer).",
         true,
       );
       return;

@@ -30,9 +30,16 @@ Data flows one direction across two JavaScript worlds because of a Chrome constr
 inject.js  (world: MAIN, run_at: document_start)
   ├─ Registers a hook in window.__alloyMonitors → catches every Alloy network response
   │    + onInstanceConfigured → orgId/edgeConfigId/edgeDomain for the active instance
-  ├─ Monkey-patches window.alloy() to read decisionScopes before they're sent
+  ├─ Wraps every Alloy instance (window.alloy + names in window.__alloyNS) in a Proxy to
+  │    read decisionScopes / personalization.decisionScopes before they're sent. Proxy, not a
+  │    new function: the base snippet's queue keeps its .q, which the library reads on load.
+  │    Re-checked every 100ms for 30s, since the library replaces the queue function.
   ├─ Scans [data-mbox] DOM nodes (+ MutationObserver, 200ms debounce, for SPAs)
-  ├─ Hooks window.digitalData.push (two-layer defineProperty, see inject.js comments)
+  ├─ Hooks .push on window.digitalData AND window.adobeDataLayer (two-layer defineProperty,
+  │    see inject.js); items already in the array when hooked are reported once. Each push
+  │    carries `layer`, stored on the event.
+  ├─ Whole file is one IIFE: nothing leaks into the page's globals except the guard,
+  │    __alloyMonitors and the two data-layer accessors. Each section has its own try/catch.
   └─ Wrapped in a window.__mboxInspectorInjected guard — safe to reinject on demand
        │  window.postMessage({ source: 'mbox-inspector', type, ... })
        ▼
