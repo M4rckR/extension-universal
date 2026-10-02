@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Target Inspector",
+  "version": "2.2.0",
+  "author": "Marcos Romero",
+  "description": "Inspecciona las actividades de Adobe Target, los mboxes y los eventos de digitalData que dispara cualquier página con Web SDK (Alloy).",
+  "minimum_chrome_version": "105",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "action": {
+    "default_title": "Target Inspector",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

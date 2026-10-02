@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Target Inspector</title>
+    <style>
+      /* ── Fuentes empaquetadas (assets/fonts, IBM Plex, licencia OFL) ──
+         Locales en vez de Google Fonts: la ventana no hace pedidos externos
+         y se ve igual sin conexión. Subconjunto latin (cubre el español). */
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-style: normal;
+        font-weight: 400 600;
+        font-display: swap;
+        src: url("assets/fonts/ibm-plex-sans-variable.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url("assets/fonts/ibm-plex-mono-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url("assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono";
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url("assets/fonts/ibm-plex-mono-600.woff2") format("woff2");
+      }
+
+      /* ── Tokens ──────────────────────────────────────────────
+         Semánticos: cada color nombra lo que significa, no su tono. Todo
+         par texto/fondo de acá abajo da ≥4.5:1 (medido), incluido --ink-3
+         sobre --bg-accent (hover de fila), que es el peor caso. */
+      :root {
+        /* Superficies */
+        --bg: #ffffff;
+        --bg-alt: #f8fafc;
+        --bg-sunken: #f1f5f9;
+        --bg-accent: #eef2ff;
+        --line: #e2e8f0;
+        --line-strong: #cbd5e1;
+
+        /* Texto */
+        --ink: #1e293b;
+        --ink-2: #475569;
+        --ink-3: #5b6779;
+
+        /* Header oscuro */
+        --chrome: #1e293b;
+        --chrome-ink: #ffffff;
+        --chrome-ink-2: #b8c0cc;
+        --chrome-accent: #a5b4fc;
+
+        /* Acento (acciones, links, foco) */
+        --accent: #4f46e5;
+        --accent-strong: #4338ca;
+        --accent-line: #c7d2fe;
+
+        /* Significados */
+        --experience: #0369a1;
+        --type-ab: #6d28d9;
+        --type-ab-bg: #ede9fe;
+        --type-xt: #9a3412;
+        --type-xt-bg: #ffedd5;
+        --scope-vec: #3730a3;
+        --scope-vec-bg: #e0e7ff;
+        --ok: #156443;
+        --ok-bg: #eaf6f0;
+        --ok-line: #bfe3d1;
+        --neutral: #334155;
+        --neutral-bg: #e2e8f0;
+        --warn: #b45309;
+        --danger: #b42318;
+        --danger-strong: #912018;
+
+        /* Tipografía: cinco pasos, sin medios píxeles */
+        --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        --fs-tag: 11px;
+        --fs-meta: 11px;
+        --fs-sm: 12px;
+        --fs-base: 13px;
+        --fs-title: 14px;
+      }
+
+      /* ── Reset ───────────────────────────────────────────── */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        width: 480px;
+        background: var(--bg);
+        color: var(--ink);
+        font-size: var(--fs-base);
+        line-height: 1.45;
+        accent-color: var(--accent);
+        caret-color: var(--accent);
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+      ::selection {
+        background: var(--accent-line);
+        color: var(--ink);
+      }
+
+      /* Foco visible único para todo control — nunca se quita el outline
+         sin reemplazo. En el header oscuro el anillo usa el acento claro. */
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      .header :focus-visible {
+        outline-color: var(--chrome-accent);
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+      }
+      .icon {
+        width: 1em;
+        height: 1em;
+        flex-shrink: 0;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* ── Header ──────────────────────────────────────────── */
+      .header {
+        background: var(--chrome);
+        color: var(--chrome-ink);
+        padding: 12px 16px 0;
+      }
+      .header__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 10px;
+      }
+      .header__left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .header__logo {
+        width: 30px;
+        height: 30px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .header__logo img {
+        width: 20px;
+        height: 20px;
+      }
+      .header__title {
+        font-size: var(--fs-title);
+        font-weight: 600;
+        line-height: 1.25;
+      }
+      .header__subtitle {
+        font-size: var(--fs-meta);
+        color: var(--chrome-ink-2);
+      }
+      .header__right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .header__count {
+        background: var(--accent);
+        color: #fff;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .btn-clear {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: #fff;
+        font-size: var(--fs-sm);
+        font-weight: 500;
+        padding: 3px 10px;
+        border-radius: 4px;
+        transition: background-color 0.15s;
+      }
+      .btn-clear:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      /* ── Modo ventana independiente ───────────────────────
+         Sin default_popup, este documento SIEMPRE se abre así (ver
+         background.js) — pero el selector body.window-mode se deja
+         condicional en vez de aplicar estas reglas directo a body, por si
+         popup.html se abre alguna vez sin ?tabId= (ver getInspectedTab).
+         Relaja el ancho fijo y el tope de altura de las listas para
+         aprovechar una ventana redimensionable. */
+      body.window-mode {
+        width: 100%;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      body.window-mode .panel--active {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      body.window-mode .list {
+        max-height: none;
+        flex: 1;
+      }
+
+      /* ── Tabs ────────────────────────────────────────────── */
+      .tabs {
+        display: flex;
+      }
+      .tabs__item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 16px;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        color: var(--chrome-ink-2);
+        transition:
+          color 0.15s,
+          background-color 0.15s;
+      }
+      .tabs__item--active {
+        color: #fff;
+        border-bottom-color: var(--chrome-accent);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .tabs__item:hover:not(.tabs__item--active) {
+        color: #fff;
+      }
+      .tabs__item:focus-visible {
+        outline-offset: -3px;
+      }
+      /* ── URL bar ─────────────────────────────────────────── */
+      .url-bar {
+        background: var(--bg-accent);
+        border-bottom: 1px solid var(--line);
+        padding: 6px 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      /* El color acompaña al texto de #page-url, que siempre nombra el estado */
+      .url-bar__indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ink-3);
+        flex-shrink: 0;
+      }
+      .url-bar__indicator--ok {
+        background: var(--ok);
+      }
+      .url-bar__indicator--warn {
+        background: var(--warn);
+      }
+      .url-bar__indicator--error {
+        background: var(--danger);
+      }
+      .url-bar__text {
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* ── Panels ──────────────────────────────────────────── */
+      .panel {
+        display: none;
+      }
+      .panel--active {
+        display: block;
+      }
+
+      /* ── Lista scrollable ────────────────────────────────── */
+      .list {
+        max-height: 340px;
+        overflow-y: auto;
+      }
+      .list,
+      .raw-pre,
+      .event-filters {
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+      }
+      .list__note {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 16px;
+        background: var(--bg-sunken);
+        border-bottom: 1px solid var(--line);
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+      }
+      .list__note-action {
+        background: none;
+        border: none;
+        color: var(--accent);
+        font-weight: 600;
+        font-size: var(--fs-sm);
+        white-space: nowrap;
+      }
+      .list__note-action:hover {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      /* ── Fila de actividad ───────────────────────────────── */
+      .activity {
+        padding: 10px 16px 11px;
+        border-bottom: 1px solid var(--line);
+        transition: background-color 0.1s;
+      }
+      .activity:nth-child(even) {
+        background: var(--bg-alt);
+      }
+      .activity:hover {
+        background: var(--bg-accent);
+      }
+      .activity:last-child {
+        border-bottom: none;
+      }
+      .activity__tags {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 4px;
+        min-width: 0;
+      }
+
+      /* ── Etiquetas (scope, tipo, evento) ─────────────────── */
+      .scope-tag,
+      .activity__type,
+      .event-tag,
+      .event-page__current {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: var(--fs-tag);
+        font-weight: 600;
+        line-height: 1.3;
+        padding: 1px 6px;
+        border-radius: 3px;
+        white-space: nowrap;
+      }
+      .scope-tag {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .scope-tag--vec {
+        background: var(--scope-vec-bg);
+        color: var(--scope-vec);
+      }
+      .scope-tag--mbox {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .activity__type {
+        flex-shrink: 0;
+      }
+      .activity__type--ab {
+        background: var(--type-ab-bg);
+        color: var(--type-ab);
+      }
+      .activity__type--xt {
+        background: var(--type-xt-bg);
+        color: var(--type-xt);
+      }
+
+      /* ── Detalle de la actividad ─────────────────────────── */
+      .activity__name {
+        font-size: var(--fs-base);
+        font-weight: 500;
+        color: var(--ink);
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+      }
+      .activity__meta {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin-top: 3px;
+        flex-wrap: wrap;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        font-variant-numeric: tabular-nums;
+      }
+      /* El ID es un botón: un click lo copia (ver data-copy en popup.js) */
+      .activity__id {
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        color: var(--ink-2);
+        border-bottom: 1px dashed var(--line-strong);
+      }
+      .activity__id:hover {
+        color: var(--accent-strong);
+        border-bottom-color: var(--accent);
+      }
+      .activity__experience {
+        color: var(--experience);
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+      .activity__separator {
+        color: var(--ink-3);
+      }
+
+      /* Links a la actividad en Adobe Target: siempre visibles (no solo
+         en hover), así también los encuentra quien navega con teclado. */
+      .activity__actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: var(--fs-sm);
+      }
+      .activity__open {
+        color: var(--accent);
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .activity__open:hover {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .activity__guess-label {
+        color: var(--ink-2);
+      }
+
+      /* Links de hipótesis cuando el tipo AB/XT no se pudo inferir */
+      .guess-btn {
+        font-family: var(--font-mono);
+        font-size: var(--fs-tag);
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 3px;
+        text-decoration: none;
+        border: 1px solid transparent;
+        transition: border-color 0.15s;
+      }
+      .guess-btn:hover {
+        border-color: currentColor;
+      }
+      .guess-btn--ab {
+        background: var(--type-ab-bg);
+        color: var(--type-ab);
+      }
+      .guess-btn--xt {
+        background: var(--type-xt-bg);
+        color: var(--type-xt);
+      }
+
+      /* ── Resumen de mboxes (pestaña mBoxes) ──────────────── */
+      .mbox-summary {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg-sunken);
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+      }
+      .mbox-summary b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      /* ── Fila de mbox ────────────────────────────────────── */
+      .mbox-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        transition: background-color 0.1s;
+        gap: 12px;
+      }
+      .mbox-row:nth-child(even) {
+        background: var(--bg-alt);
+      }
+      .mbox-row:hover {
+        background: var(--bg-accent);
+      }
+      .mbox-row:last-child {
+        border-bottom: none;
+      }
+      .mbox-row__info {
+        flex: 1;
+        min-width: 0;
+      }
+      .mbox-row__name {
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        font-family: var(--font-mono);
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .mbox-row__activity {
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+      .mbox-row__status {
+        flex-shrink: 0;
+      }
+
+      /* ── Badge de estado del mbox ────────────────────────── */
+      .status-badge {
+        font-size: var(--fs-tag);
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 20px;
+        white-space: nowrap;
+      }
+      .status-badge--active {
+        background: var(--scope-vec-bg);
+        color: var(--scope-vec);
+      }
+      .status-badge--free {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .status-badge--alloy {
+        background: var(--neutral-bg);
+        color: var(--neutral);
+      }
+
+      /* ── Búsqueda de texto (pestaña Eventos) ─────────────── */
+      .event-search {
+        padding: 8px 16px 0;
+        background: var(--bg-sunken);
+        flex-shrink: 0;
+      }
+      .event-search[hidden] {
+        display: none;
+      }
+      .event-search__input {
+        width: 100%;
+        font-size: var(--fs-sm);
+        padding: 5px 9px;
+        border: 1px solid var(--line-strong);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .event-search__input:focus-visible {
+        outline-offset: 0;
+        border-color: var(--accent);
+      }
+      .event-search__input::placeholder {
+        color: var(--ink-3);
+        opacity: 1;
+      }
+
+      /* ── Chips de filtro por event name (pestaña Eventos) ── */
+      .event-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg-sunken);
+        max-height: 92px;
+        overflow-y: auto;
+        flex-shrink: 0;
+      }
+      .event-filters:empty {
+        display: none;
+      }
+      .event-filter {
+        font-family: var(--font-mono);
+        font-size: var(--fs-tag);
+        font-weight: 500;
+        padding: 3px 10px;
+        border-radius: 20px;
+        border: 1px solid var(--line-strong);
+        background: var(--bg);
+        color: var(--ink-3);
+        text-decoration: line-through;
+        transition:
+          border-color 0.15s,
+          background-color 0.15s;
+        white-space: nowrap;
+      }
+      .event-filter:hover {
+        border-color: var(--accent);
+      }
+      .event-filter--active {
+        background: var(--bg-accent);
+        color: var(--accent-strong);
+        border-color: var(--accent-line);
+        text-decoration: none;
+      }
+
+      /* ── Sección de página del recorrido (pestaña Eventos) ────────
+         Nivel único de nesting: colapsar la página oculta TODO su contenido
+         de una vez, incluidos los .event-group de abajo — nunca queda un
+         árbol de tres niveles de toggles anidados. */
+      .event-page {
+        border-bottom: 1px solid var(--line);
+      }
+      .event-page:last-child {
+        border-bottom: none;
+      }
+      .event-page__header,
+      .event-group__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        border: none;
+        text-align: left;
+        transition: background-color 0.1s;
+      }
+      .event-page__header {
+        padding: 9px 16px;
+        background: var(--bg-alt);
+        border-bottom: 1px solid var(--line);
+      }
+      .event-page__header:hover,
+      .event-group__header:hover {
+        background: var(--bg-accent);
+      }
+      .event-page__header:focus-visible,
+      .event-group__header:focus-visible {
+        outline-offset: -2px;
+      }
+      .event-page__chevron,
+      .event-group__chevron {
+        font-size: 12px;
+        color: var(--ink-3);
+        transition: transform 0.15s;
+      }
+      .event-page--expanded .event-page__chevron,
+      .event-group--expanded .event-group__chevron {
+        transform: rotate(90deg);
+      }
+      .event-page__path {
+        font-family: var(--font-mono);
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        color: var(--ink);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .event-page__count {
+        font-size: var(--fs-meta);
+        color: var(--ink-3);
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .event-page__current {
+        font-family: var(--font-sans);
+        color: var(--accent-strong);
+        background: var(--bg-accent);
+        border: 1px solid var(--accent-line);
+        flex-shrink: 0;
+      }
+      .event-page__items {
+        display: none;
+      }
+      .event-page--expanded .event-page__items {
+        display: block;
+      }
+
+      /* ── Grupo de eventos consecutivos colapsado (pestaña Eventos) ─ */
+      .event-group {
+        border-bottom: 1px solid var(--line);
+      }
+      .event-group:last-child {
+        border-bottom: none;
+      }
+      .event-group__header {
+        padding: 10px 16px 11px;
+        background: transparent;
+      }
+      .event-group__header .event-row__time {
+        flex: 1;
+        text-align: right;
+      }
+      .event-group__items {
+        display: none;
+        background: var(--bg-alt);
+      }
+      .event-group--expanded .event-group__items {
+        display: block;
+      }
+      .event-group__items .event-row {
+        padding-left: 28px;
+      }
+
+      /* ── Fila de evento (pestaña Eventos) ────────────────── */
+      .event-row {
+        padding: 10px 16px 11px;
+        border-bottom: 1px solid var(--line);
+        transition: background-color 0.1s;
+      }
+      .event-row:hover {
+        background: var(--bg-accent);
+      }
+      .event-row:last-child {
+        border-bottom: none;
+      }
+      .event-row__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .event-tag {
+        background: var(--bg-accent);
+        color: var(--accent-strong);
+        border: 1px solid var(--accent-line);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .event-row__time {
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-3);
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .event-row__title {
+        font-size: var(--fs-base);
+        font-weight: 500;
+        color: var(--ink);
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+      .event-row__meta {
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+      .event-row__raw {
+        margin-top: 6px;
+      }
+
+      /* ── Bloques compartidos de payload/contenido crudo (Eventos y
+         Actividades usan el mismo <summary>/<pre> monoespaciado) ─── */
+      .raw-summary {
+        font-size: var(--fs-sm);
+        font-weight: 500;
+        color: var(--accent);
+        cursor: pointer;
+        user-select: none;
+        width: fit-content;
+      }
+      .raw-pre {
+        margin-top: 6px;
+        padding: 8px 10px;
+        background: var(--bg-sunken);
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 200px;
+        overflow-y: auto;
+        color: var(--ink);
+      }
+
+      /* ── Contenido expandible de una actividad (pestaña Actividades) ─ */
+      .activity__content {
+        margin-top: 8px;
+      }
+      .activity__content-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        margin-top: 6px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink);
+      }
+      .activity__content-field {
+        overflow-wrap: anywhere;
+      }
+      .activity__content-field b {
+        color: var(--ink-3);
+        font-weight: 500;
+        margin-right: 3px;
+      }
+      .activity__content-note {
+        margin-top: 6px;
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+      }
+
+      /* ── Botones secundarios y primarios ─────────────────── */
+      .btn-copy-content,
+      .btn-inject {
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        border-radius: 5px;
+        border: 1px solid transparent;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s,
+          color 0.15s;
+      }
+      .btn-copy-content {
+        display: block;
+        margin-top: 8px;
+        background: var(--bg);
+        color: var(--accent-strong);
+        border-color: var(--accent-line);
+        padding: 4px 10px;
+      }
+      .btn-copy-content:hover {
+        background: var(--bg-accent);
+      }
+
+      /* ── Estado vacío ────────────────────────────────────── */
+      .empty-state {
+        padding: 40px 24px;
+        text-align: center;
+      }
+      .empty-state__icon {
+        display: block;
+        margin: 0 auto 10px;
+        font-size: 28px;
+        color: var(--ink-3);
+      }
+      .empty-state__text {
+        font-size: var(--fs-base);
+        line-height: 1.6;
+        color: var(--ink-2);
+        max-width: 44ch;
+        margin: 0 auto;
+        text-wrap: balance;
+      }
+      .empty-state__text strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      /* Botón para reinyectar inject.js/content.js en pestañas que ya
+         estaban abiertas antes de recargar la extensión (evita el reload manual) */
+      .btn-inject {
+        margin-top: 14px;
+        background: var(--accent);
+        color: #fff;
+        padding: 7px 16px;
+      }
+      .btn-inject:hover:not(:disabled) {
+        background: var(--accent-strong);
+      }
+
+      /* ── Aviso de estado (deshacer, confirmaciones, errores) ──
+         En flujo, entre el panel y la barra de tenant: nunca tapa contenido. */
+      .toast {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 16px;
+        background: var(--chrome);
+        color: var(--chrome-ink);
+        font-size: var(--fs-sm);
+        flex-shrink: 0;
+      }
+      .toast[hidden] {
+        display: none;
+      }
+      .toast--error {
+        background: var(--danger-strong);
+      }
+      .toast__action {
+        background: none;
+        border: none;
+        color: var(--chrome-accent);
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        white-space: nowrap;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .toast :focus-visible {
+        outline-color: var(--chrome-accent);
+      }
+
+      /* ── Footer ──────────────────────────────────────────── */
+      .footer {
+        background: var(--bg-sunken);
+        border-top: 1px solid var(--line);
+        padding: 6px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .footer__note {
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── Barra de tenant de Adobe Target ─────────────────── */
+      .tenant-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 16px;
+        background: var(--bg-alt);
+        border-top: 1px solid var(--line);
+        flex-shrink: 0;
+      }
+      .tenant-bar__label {
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+      .tenant-bar__input {
+        flex: 1;
+        min-width: 0;
+        font-size: var(--fs-sm);
+        font-family: var(--font-mono);
+        color: var(--ink);
+        padding: 4px 8px;
+        border: 1px solid var(--line-strong);
+        border-radius: 4px;
+        background: var(--bg);
+      }
+      .tenant-bar__input:focus-visible {
+        outline-offset: 0;
+        border-color: var(--accent);
+      }
+      .tenant-bar__input[aria-invalid="true"] {
+        border-color: var(--danger);
+      }
+      .tenant-bar__input::placeholder {
+        color: var(--ink-3);
+        opacity: 1;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div class="header__top">
+        <div class="header__left">
+          <div class="header__logo">
+            <img src="assets/icon48.svg" alt="" />
+          </div>
+          <div>
+            <h1 class="header__title">Target Inspector</h1>
+            <div class="header__subtitle">Adobe Target · Alloy Monitor</div>
+          </div>
+        </div>
+        <div class="header__right">
+          <span class="header__count" id="count" title="Actividades capturadas en esta página">0 ACT</span>
+          <button
+            class="btn-clear"
+            id="clear"
+            title="Borra actividades, mboxes y eventos capturados. Se puede deshacer unos segundos."
+          >
+            Limpiar
+          </button>
+        </div>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Secciones del inspector">
+        <button
+          class="tabs__item tabs__item--active"
+          role="tab"
+          id="tab-actividades"
+          data-tab="actividades"
+          aria-selected="true"
+          aria-controls="panel-actividades"
+        >
+          Actividades
+        </button>
+        <button
+          class="tabs__item"
+          role="tab"
+          id="tab-mboxes"
+          data-tab="mboxes"
+          aria-selected="false"
+          aria-controls="panel-mboxes"
+          tabindex="-1"
+        >
+          mBoxes
+        </button>
+        <button
+          class="tabs__item"
+          role="tab"
+          id="tab-eventos"
+          data-tab="eventos"
+          aria-selected="false"
+          aria-controls="panel-eventos"
+          tabindex="-1"
+        >
+          Eventos
+        </button>
+      </div>
+    </header>
+
+    <div class="url-bar">
+      <div class="url-bar__indicator" aria-hidden="true"></div>
+      <div class="url-bar__text" id="page-url">Sin página activa</div>
+    </div>
+
+    <section
+      class="panel panel--active"
+      id="panel-actividades"
+      role="tabpanel"
+      aria-labelledby="tab-actividades"
+    >
+      <div class="list" id="list"></div>
+    </section>
+
+    <section class="panel" id="panel-mboxes" role="tabpanel" aria-labelledby="tab-mboxes">
+      <p class="mbox-summary" id="mbox-summary" hidden></p>
+      <div class="list" id="mbox-list"></div>
+    </section>
+
+    <section class="panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos">
+      <div class="event-search" id="event-search-bar" hidden>
+        <input
+          class="event-search__input"
+          id="event-search"
+          type="search"
+          placeholder="Buscar en eventos: nombre, valor del payload o página…"
+          aria-label="Buscar en eventos"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div
+        class="event-filters"
+        id="event-filters"
+        role="group"
+        aria-label="Filtrar por nombre de evento"
+      ></div>
+      <div class="list" id="event-list"></div>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-text"></span>
+      <button class="toast__action" id="toast-action" hidden></button>
+    </div>
+
+    <div class="tenant-bar">
+      <label class="tenant-bar__label" for="tenant-input">Tenant Target</label>
+      <input
+        class="tenant-bar__input"
+        id="tenant-input"
+        type="text"
+        placeholder="slug de la org (experience.adobe.com/#/@…)"
+        autocomplete="off"
+        spellcheck="false"
+        title="Slug de la organización en la URL del admin de Adobe Target (no es el orgId). Vacío = sin links a Target."
+      />
+    </div>
+
+    <footer class="footer">
+      <span class="footer__note" id="ts">—</span>
+      <span class="footer__note" id="edge-info">Target Inspector</span>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
