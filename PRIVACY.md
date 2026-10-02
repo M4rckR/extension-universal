@@ -35,4 +35,4 @@ El usuario puede borrar todo lo capturado en cualquier momento con el botón Lim
 
 ## Contacto
 
-Marcos Romero — <tu correo>
+Marcos Romero — marcromerogar4@gmail.com

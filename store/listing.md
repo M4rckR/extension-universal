@@ -77,13 +77,12 @@ datos. Marcar las tres certificaciones:
 **URL de la política de privacidad:** el `PRIVACY.md` publicado, por ejemplo
 `https://github.com/M4rckR/extension-universal/blob/main/PRIVACY.md`
 (el repositorio tiene que ser público, o hay que alojar el texto en otra URL
-pública). Antes de enviar, reemplazar `<tu correo>` en la sección Contacto.
+pública).
 
 ---
 
 ## Antes de enviar
 
-- [ ] Reemplazar `<tu correo>` en `PRIVACY.md` y publicar la política en una URL pública.
 - [ ] Correr `sh store/package.sh` y subir el zip de `dist/`.
 - [ ] Revisión: el permiso de host para todos los sitios suele llevar a una revisión más larga (días, a veces semanas).
 - [ ] Para cada versión nueva: subir `version` en `manifest.json` (y en el README) y volver a empaquetar.
