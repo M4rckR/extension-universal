@@ -28,6 +28,48 @@ const MAX_EVENT_PAYLOAD_CHARS = 20000;
 const MAX_MBOXES = 500;
 const MAX_MBOX_NAME = 200;
 const MAX_SHORT_STRING = 300;
+// Renderizado de Alloy: unos pocos eventos por sendEvent; 200 cubren de sobra
+// una página con SPA. Reglas de Launch: se guardan agregadas (una entrada por
+// regla y resultado, con contador), así que el tope es de reglas distintas —
+// la propiedad más grande medida (viabcp.com) dispara ~150 por carga.
+const MAX_RENDER_EVENTS = 200;
+const MAX_LAUNCH_RULES = 400;
+const MAX_RULES_PER_MESSAGE = 200;
+const MAX_CONDITIONS_PER_RULE = 5;
+// Código de una condición fallida (customCode) o su configuración en JSON.
+// Las medidas en sitios reales rondan 0.2–2 KB; 8000 caracteres cubren casi
+// todas, y con 400 reglas el peor caso queda lejos de la cuota de 10MB.
+const MAX_CONDITION_CODE = 8000;
+// Acciones de reglas completadas: se guardan una vez por regla (inject.js no
+// las reenvía en cada disparo). Medido: mediana ~120-475 caracteres, pero hay
+// customCode de 40-90KB (pixels, modales) — se recortan a 12000 con aviso.
+// Peor caso real medido (bbva.pe, 71 customCode): ~200KB por carga.
+const MAX_ACTIONS_PER_RULE = 10;
+const MAX_ACTION_CODE = 12000;
+
+/** Valida una acción de Launch que viene de inject.js (forma no confiable). */
+function cleanAction(a) {
+  if (!a || typeof a !== "object") return null;
+  const code = typeof a.code === "string" ? a.code : "";
+  const url = typeof a.externalUrl === "string" && /^https?:\/\//.test(a.externalUrl) ? a.externalUrl : undefined;
+  return {
+    extension: shortString(a.extension),
+    kind: shortString(a.kind),
+    language: shortString(a.language),
+    externalUrl: shortString(url),
+    code: code ? code.slice(0, MAX_ACTION_CODE) : undefined,
+    codeTruncated: code.length > MAX_ACTION_CODE,
+  };
+}
+const RENDER_STATUSES = new Set([
+  "rendering-started",
+  "rendering-succeeded",
+  "rendering-failed",
+  "rendering-redirect",
+  "no-offers",
+  "hide-containers",
+  "show-containers",
+]);
 
 function jsonLength(value) {
   try {
@@ -162,15 +204,23 @@ enqueueStorageTask(async () => {
 
   if (prevPath !== currPath) {
     // Nueva página — limpiar la foto del estado actual, incluyendo el
-    // orgId/edgeConfigId de la página anterior. digitalDataEvents queda afuera.
+    // orgId/edgeConfigId de la página anterior, el renderizado y las reglas
+    // y propiedad de Launch. digitalDataEvents queda afuera.
     await safeStorageSet({
       requests: [],
       domMboxes: [],
       instanceInfo: null,
+      renderEvents: [],
+      launchRules: [],
+      launchInfo: null,
       tabUrl: window.location.href,
     });
   } else {
-    await safeStorageSet({ tabUrl: window.location.href });
+    // Misma página recargada: requests/domMboxes se conservan (se deduplican
+    // al mostrar), pero el renderizado y las reglas de Launch son de CADA
+    // carga — sin esto, una recarga duplicaba cada regla (×2) y mezclaba el
+    // prehiding de dos cargas.
+    await safeStorageSet({ tabUrl: window.location.href, renderEvents: [], launchRules: [] });
   }
 });
 
@@ -294,6 +344,103 @@ function handleInjectedMessage(event) {
       const events = data.digitalDataEvents || [];
       events.unshift(entry);
       await safeStorageSet({ digitalDataEvents: events.slice(0, MAX_DIGITAL_DATA_EVENTS) });
+    });
+  }
+
+  // Ciclo de renderizado y prehiding de Alloy (onContentRendering /
+  // onContentHiding en inject.js). Solo estados conocidos; se guardan en
+  // orden de llegada (el popup los recorre en ese orden para saber cuál
+  // terminó cómo). Foto de la página actual: se limpia al cambiar de página.
+  if (event.data.type === "renderEvent") {
+    if (!RENDER_STATUSES.has(event.data.status)) return;
+    const entry = {
+      status: event.data.status,
+      instance: shortString(event.data.instance),
+      scope: shortString(event.data.scope),
+      activityIds: cleanNames(event.data.activityIds),
+      error: shortString(event.data.error),
+      t: Number.isFinite(event.data.t) ? event.data.t : null,
+    };
+    enqueueStorageTask(async () => {
+      const data = await safeStorageGet("renderEvents");
+      const list = (data.renderEvents || []).concat(entry).slice(-MAX_RENDER_EVENTS);
+      await safeStorageSet({ renderEvents: list });
+    });
+  }
+
+  // Propiedad de Launch cargada en la página (nombre, entorno, build).
+  if (event.data.type === "launchInfo") {
+    const p = event.data.payload || {};
+    const info = {
+      propertyName: shortString(p.propertyName),
+      propertyId: shortString(p.propertyId),
+      environment: shortString(p.environment),
+      environmentId: shortString(p.environmentId),
+      buildDate: shortString(p.buildDate),
+      turbineVersion: shortString(p.turbineVersion),
+    };
+    enqueueStorageTask(() => safeStorageSet({ launchInfo: info }));
+  }
+
+  // Tanda de reglas de Launch (completadas o con condición no cumplida). Se
+  // agregan por regla + resultado: la misma regla de scroll puede dispararse
+  // decenas de veces y guardar cada una llenaba la lista de duplicados.
+  if (event.data.type === "launchRules") {
+    if (!Array.isArray(event.data.rules)) return;
+    const incoming = event.data.rules
+      .slice(0, MAX_RULES_PER_MESSAGE)
+      .filter((r) => r && (r.status === "completed" || r.status === "failed"))
+      .map((r) => {
+        const c = r.condition && typeof r.condition === "object" ? r.condition : null;
+        return {
+          status: r.status,
+          ruleId: shortString(r.ruleId),
+          ruleName: shortString(r.ruleName),
+          condition: c
+            ? {
+                extension: shortString(c.extension),
+                kind: shortString(c.kind),
+                detail: shortString(c.detail),
+                negate: c.negate === true,
+                code: typeof c.code === "string" && c.code ? c.code.slice(0, MAX_CONDITION_CODE) : undefined,
+                codeTruncated: typeof c.code === "string" && c.code.length > MAX_CONDITION_CODE,
+              }
+            : null,
+          actions: Array.isArray(r.actions)
+            ? r.actions.slice(0, MAX_ACTIONS_PER_RULE).map(cleanAction).filter(Boolean)
+            : null,
+          t: Number.isFinite(r.t) ? r.t : null,
+        };
+      })
+      .filter((r) => r.ruleId || r.ruleName);
+    if (incoming.length === 0) return;
+    enqueueStorageTask(async () => {
+      const data = await safeStorageGet("launchRules");
+      const list = data.launchRules || [];
+      incoming.forEach((r) => {
+        const key = `${r.ruleId || r.ruleName}|${r.status}`;
+        let entry = list.find((x) => x.key === key);
+        if (!entry) {
+          if (list.length >= MAX_LAUNCH_RULES) return;
+          entry = { key, status: r.status, ruleId: r.ruleId, ruleName: r.ruleName, count: 0, firstT: r.t, lastT: r.t, conditions: [] };
+          list.push(entry);
+        }
+        entry.count += 1;
+        entry.lastT = r.t;
+        if (r.actions && !entry.actions) entry.actions = r.actions;
+        if (r.condition && entry.conditions.length < MAX_CONDITIONS_PER_RULE) {
+          // El código cuenta: dos customCode de la misma regla tienen el mismo
+          // extension/kind/detail vacío y solo se distinguen por el código.
+          const same = (c) =>
+            c.extension === r.condition.extension &&
+            c.kind === r.condition.kind &&
+            c.detail === r.condition.detail &&
+            c.negate === r.condition.negate &&
+            c.code === r.condition.code;
+          if (!entry.conditions.some(same)) entry.conditions.push(r.condition);
+        }
+      });
+      await safeStorageSet({ launchRules: list });
     });
   }
 }

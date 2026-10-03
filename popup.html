@@ -80,8 +80,11 @@
         --neutral: #334155;
         --neutral-bg: #e2e8f0;
         --warn: #b45309;
+        --warn-strong: #92400e;
+        --warn-bg: #fef3c7;
         --danger: #b42318;
         --danger-strong: #912018;
+        --danger-bg: #fee4e2;
 
         /* Tipografía: cinco pasos, sin medios píxeles */
         --font-sans: "IBM Plex Sans", system-ui, sans-serif;
@@ -585,6 +588,193 @@
         color: var(--neutral);
       }
 
+      /* ── Estado de renderizado de una actividad (Actividades) ──
+         Dice si Alloy aplicó la actividad en la página, no solo si Target
+         respondió. Mismo formato que las etiquetas de scope/tipo. */
+      .render-badge {
+        display: inline-block;
+        font-size: var(--fs-tag);
+        font-weight: 600;
+        line-height: 1.3;
+        padding: 1px 7px;
+        border-radius: 20px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        margin-left: auto;
+      }
+      .render-badge--ok {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .render-badge--failed {
+        background: var(--danger-bg);
+        color: var(--danger-strong);
+      }
+      .render-badge--pending {
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+      .render-badge--none {
+        background: var(--neutral-bg);
+        color: var(--neutral);
+      }
+      .list__note--warn {
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+
+      /* ── Propiedad de Launch (pestaña Launch) ────────────── */
+      .launch-card {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg-sunken);
+        flex-shrink: 0;
+      }
+      .launch-card[hidden] {
+        display: none;
+      }
+      .launch-card__row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .launch-card__name {
+        font-size: var(--fs-base);
+        font-weight: 600;
+        color: var(--ink);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .launch-card__meta {
+        margin-top: 3px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+      .launch-card__summary {
+        margin-top: 6px;
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+      }
+      .launch-card__summary b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .launch-card__warning {
+        margin-top: 6px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        font-size: var(--fs-sm);
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+      /* Entorno de la librería: production es lo normal; cualquier otro
+         es lo que más conviene ver de un vistazo. */
+      .env-badge {
+        flex-shrink: 0;
+        font-family: var(--font-mono);
+        font-size: var(--fs-tag);
+        font-weight: 600;
+        line-height: 1.3;
+        padding: 1px 7px;
+        border-radius: 20px;
+        white-space: nowrap;
+        background: var(--neutral-bg);
+        color: var(--neutral);
+      }
+      .env-badge--production {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .env-badge--staging {
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+      .env-badge--development {
+        background: var(--danger-bg);
+        color: var(--danger-strong);
+      }
+
+      /* ── Fila de regla de Launch ─────────────────────────── */
+      .rule-row {
+        padding: 9px 16px 10px;
+        border-bottom: 1px solid var(--line);
+        transition: background-color 0.1s;
+      }
+      .rule-row:nth-child(even) {
+        background: var(--bg-alt);
+      }
+      .rule-row:hover {
+        background: var(--bg-accent);
+      }
+      .rule-row:last-child {
+        border-bottom: none;
+      }
+      .rule-row__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 3px;
+      }
+      .rule-row__header .event-row__time {
+        margin-left: auto;
+      }
+      .rule-row__count {
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        font-weight: 600;
+        color: var(--ink-2);
+        font-variant-numeric: tabular-nums;
+      }
+      .rule-row__name {
+        font-size: var(--fs-sm);
+        font-weight: 500;
+        color: var(--ink);
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+      }
+      .rule-row__cond {
+        margin-top: 3px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-2);
+        overflow-wrap: anywhere;
+      }
+      .rule-row__cond b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .rule-row__code {
+        margin-top: 4px;
+      }
+      .rule-row__link {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .rule-row__link:hover {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .status-badge--rule-ok {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .status-badge--rule-failed {
+        background: var(--neutral-bg);
+        color: var(--neutral);
+      }
+
       /* ── Búsqueda de texto (pestaña Eventos) ─────────────── */
       .event-search {
         padding: 8px 16px 0;
@@ -1030,7 +1220,7 @@
           <button
             class="btn-clear"
             id="clear"
-            title="Borra actividades, mboxes y eventos capturados. Se puede deshacer unos segundos."
+            title="Borra actividades, mboxes, eventos y reglas de Launch capturados. Se puede deshacer unos segundos."
           >
             Limpiar
           </button>
@@ -1068,6 +1258,17 @@
           tabindex="-1"
         >
           Eventos
+        </button>
+        <button
+          class="tabs__item"
+          role="tab"
+          id="tab-launch"
+          data-tab="launch"
+          aria-selected="false"
+          aria-controls="panel-launch"
+          tabindex="-1"
+        >
+          Launch
         </button>
       </div>
     </header>
@@ -1110,6 +1311,28 @@
         aria-label="Filtrar por nombre de evento"
       ></div>
       <div class="list" id="event-list"></div>
+    </section>
+
+    <section class="panel" id="panel-launch" role="tabpanel" aria-labelledby="tab-launch">
+      <div class="launch-card" id="launch-info" hidden></div>
+      <div class="event-search" id="launch-search-bar" hidden>
+        <input
+          class="event-search__input"
+          id="launch-search"
+          type="search"
+          placeholder="Buscar regla, condición o código…"
+          aria-label="Buscar en reglas de Launch"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div
+        class="event-filters"
+        id="launch-filters"
+        role="group"
+        aria-label="Filtrar reglas por resultado"
+      ></div>
+      <div class="list" id="launch-list"></div>
     </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden>

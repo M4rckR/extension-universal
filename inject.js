@@ -3,7 +3,9 @@
 // envoltura cada `function` y `const` de nivel superior quedaba como variable
 // global de la página (window.interceptAlloy, window.scanDomMboxes, …), con
 // riesgo de pisar o ser pisada por una función del sitio con el mismo nombre.
-// Lo único que se expone a propósito es el guard window.__mboxInspectorInjected.
+// Lo único que se expone a propósito es el guard window.__mboxInspectorInjected
+// (más los hooks que la página ya espera: __alloyMonitors, los accessors de la
+// capa de datos y el de window._satellite — ver secciones 1, 4 y 5).
 (() => {
 
 // ── 0. Guard de idempotencia ──────────────────────────────────────────────────
@@ -49,6 +51,48 @@ try {
           edgeConfigId: data.config?.datastreamId ?? data.config?.edgeConfigId,
           edgeDomain: data.config?.edgeDomain,
         },
+      }, '*');
+    },
+    // Ciclo de renderizado de las propuestas que Alloy aplica solo
+    // (renderDecisions: true). Medido en sitios reales:
+    //   - "rendering-started": payload { scope, propositions } → lo que va a aplicar.
+    //   - "rendering-succeeded": payload { <scope>: [propuestas aplicadas] }.
+    //   - "rendering-failed" / "no-offers" / "rendering-redirect".
+    // Solo se reenvían los IDs de actividad (el contenido de las ofertas ya
+    // llega completo por onNetworkResponse). Así Actividades puede decir si
+    // cada actividad se pintó de verdad, no solo si Target respondió.
+    onContentRendering(data) {
+      const p = (data && data.payload) || {};
+      const idsOf = (list) => (Array.isArray(list) ? list : [])
+        .map((prop) => prop && prop.scopeDetails && prop.scopeDetails.activity && prop.scopeDetails.activity.id)
+        .filter((id) => id !== undefined && id !== null)
+        .map(String);
+      const activityIds = Array.isArray(p.propositions)
+        ? idsOf(p.propositions)
+        : Object.values(p).flatMap(idsOf);
+      const err = data.error || p.error;
+      window.postMessage({
+        source: 'mbox-inspector',
+        type: 'renderEvent',
+        status: data.status,
+        instance: data.instanceName,
+        scope: typeof p.scope === 'string' ? p.scope : undefined,
+        activityIds,
+        error: err ? String(err.message || err) : undefined,
+        t: window.performance ? window.performance.now() : null,
+      }, '*');
+    },
+    // Prehiding: Alloy oculta contenedores mientras espera a Target
+    // ("hide-containers") y los vuelve a mostrar ("show-containers"). La
+    // diferencia entre los dos es el tiempo que el usuario vio la página tapada.
+    onContentHiding(data) {
+      window.postMessage({
+        source: 'mbox-inspector',
+        type: 'renderEvent',
+        status: data && data.status,
+        instance: data && data.instanceName,
+        activityIds: [],
+        t: window.performance ? window.performance.now() : null,
       }, '*');
     },
   });
@@ -276,5 +320,210 @@ DATA_LAYER_NAMES.forEach((name) => {
     // normalmente, solo sin los eventos de esa capa.
   }
 });
+
+// ── 5. Adobe Launch (Tags / Data Collection): propiedad y reglas ─────────────
+// Turbine (el motor de Launch) avisa a los objetos de window._satellite._monitors
+// cada vez que una regla se dispara, se completa o no cumple una condición —
+// el mismo mecanismo que usa el Debugger oficial de Adobe.
+//
+// No se crea window._satellite antes de tiempo (el patrón que documenta Adobe
+// es `window._satellite = window._satellite || {}`): hay sitios que hacen
+// `if (window._satellite) _satellite.track(...)` antes de que cargue Launch, y
+// un objeto vacío los haría tirar. En su lugar, un accessor en
+// window._satellite engancha el monitor en el momento en que la librería de
+// Launch asigna su objeto (lo mismo que se hace con la capa de datos).
+//
+// Las reglas se juntan y se mandan en tandas cada 300ms: una carga normal
+// dispara entre 50 y 300 reglas, y un postMessage por regla era una escritura
+// a storage por regla.
+const LAUNCH_FLUSH_MS = 300;
+let launchBuffer = [];
+let launchFlushTimer = null;
+let launchInfoSent = false;
+let currentSatellite;
+
+// Tope del código/configuración que viaja por condición (content.js vuelve a
+// recortar al guardar). Evita mensajes enormes si una condición trae un blob.
+const MAX_CONDITION_CODE_CHARS = 20000;
+
+/**
+ * Lo que una persona necesita para entender por qué no se cumplió: en
+ * customCode, el código de la condición (Turbine lo guarda como función en
+ * settings.source — o como string en algunas builds); en el resto, la
+ * configuración completa en JSON (operandos, regex, valores de cookie…).
+ * Es el mismo código que la página ya sirve en su librería de Launch.
+ */
+function conditionCode(kind, settings) {
+  try {
+    let code;
+    if (kind === 'customCode') {
+      const src = settings.source;
+      code = typeof src === 'function' ? String(src) : typeof src === 'string' ? src : '';
+    } else {
+      code = JSON.stringify(settings, (k, v) => (typeof v === 'function' ? String(v) : v), 2) || '';
+    }
+    return code === '{}' ? '' : code.slice(0, MAX_CONDITION_CODE_CHARS);
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * "core/src/lib/conditions/cookie.js" → { extension: "core", kind: "cookie" }.
+ * Las extensiones compiladas usan carpeta + index.js
+ * ("adobe-alloy/dist/lib/actions/sendEvent/index.js"): ahí el tipo es la carpeta.
+ */
+function moduleName(modulePath) {
+  const parts = modulePath.split('/');
+  let file = parts[parts.length - 1];
+  if (file === 'index.js' && parts.length > 1) file = parts[parts.length - 2];
+  return { extension: parts[0], kind: file.replace(/\.js$/, '') };
+}
+
+/** Resumen de una condición fallida: extensión, tipo, el dato que la explica y su código/configuración. */
+function summarizeCondition(condition) {
+  if (!condition || typeof condition.modulePath !== 'string') return undefined;
+  const { extension, kind } = moduleName(condition.modulePath);
+  const s = condition.settings || {};
+  let detail = '';
+  try {
+    if (kind === 'cookie') detail = String(s.name || '');
+    else if (kind === 'path' || kind === 'pathAndQuerystring') {
+      detail = (Array.isArray(s.paths) ? s.paths : []).map((x) => x && x.value).filter(Boolean).join(', ');
+    } else if (kind === 'valueComparison') {
+      detail = `${s.leftOperand} ${(s.comparison && s.comparison.operator) || '?'} ${s.rightOperand}`;
+    } else if (kind === 'queryStringParameter') {
+      detail = String(s.name || '');
+    }
+  } catch (e) {
+    detail = '';
+  }
+  return { extension, kind, detail, negate: !!condition.negate, code: conditionCode(kind, s) };
+}
+
+/**
+ * Acción de una regla completada: módulo, lenguaje (customCode: javascript/
+ * html) y su código o configuración. Un customCode "externo" tiene en
+ * settings.source la URL del archivo hasta que Launch lo descarga (después
+ * pasa a ser el código): en ese caso se manda la URL en vez de código.
+ */
+function summarizeAction(action) {
+  if (!action || typeof action.modulePath !== 'string') return undefined;
+  const { extension, kind } = moduleName(action.modulePath);
+  const s = action.settings || {};
+  const src = s.source;
+  const externalUrl =
+    kind === 'customCode' && s.isExternal && typeof src === 'string' && /^https?:\/\//.test(src) ? src : undefined;
+  return {
+    extension,
+    kind,
+    language: kind === 'customCode' && typeof s.language === 'string' ? s.language : undefined,
+    externalUrl,
+    code: externalUrl ? '' : conditionCode(kind, s),
+  };
+}
+
+// Las acciones se mandan UNA vez por regla: el código no cambia entre
+// disparos y hay acciones de ~90KB (medido en bbva.pe) — una regla de scroll
+// mandaba ese bloque en cada evento.
+const launchActionsSent = new Set();
+
+function postLaunchInfo() {
+  const s = currentSatellite;
+  if (launchInfoSent || !s || !s.buildInfo) return;
+  launchInfoSent = true;
+  try {
+    window.postMessage({
+      source: 'mbox-inspector',
+      type: 'launchInfo',
+      payload: {
+        propertyName: s.property && s.property.name,
+        propertyId: s.property && s.property.id,
+        environment: s.environment && s.environment.stage,
+        environmentId: s.environment && s.environment.id,
+        buildDate: s.buildInfo.buildDate,
+        turbineVersion: s.buildInfo.turbineVersion,
+      },
+    }, '*');
+  } catch (e) {
+    launchInfoSent = false;
+  }
+}
+
+function flushLaunchRules() {
+  launchFlushTimer = null;
+  postLaunchInfo();
+  if (launchBuffer.length === 0) return;
+  const rules = launchBuffer;
+  launchBuffer = [];
+  try {
+    window.postMessage({ source: 'mbox-inspector', type: 'launchRules', rules }, '*');
+  } catch (e) {
+    // nunca dejar que un fallo de captura afecte la página
+  }
+}
+
+function queueLaunchRule(status, event) {
+  try {
+    const rule = (event && event.rule) || {};
+    const actionsKey = rule.id || rule.name;
+    let actions;
+    if (status === 'completed' && actionsKey && !launchActionsSent.has(actionsKey) && Array.isArray(rule.actions)) {
+      launchActionsSent.add(actionsKey);
+      actions = rule.actions.map(summarizeAction).filter(Boolean);
+    }
+    launchBuffer.push({
+      status,
+      ruleId: rule.id,
+      ruleName: rule.name,
+      condition: status === 'failed' ? summarizeCondition(event.condition) : undefined,
+      actions,
+      t: window.performance ? window.performance.now() : null,
+    });
+    if (!launchFlushTimer) launchFlushTimer = setTimeout(flushLaunchRules, LAUNCH_FLUSH_MS);
+  } catch (e) {
+    // un evento raro de Turbine no corta la captura del resto
+  }
+}
+
+const launchMonitor = {
+  ruleCompleted(event) { queueLaunchRule('completed', event); },
+  ruleConditionFailed(event) { queueLaunchRule('failed', event); },
+};
+
+function attachLaunchMonitor(satellite) {
+  if (!satellite || typeof satellite !== 'object') return;
+  try {
+    if (!Array.isArray(satellite._monitors)) satellite._monitors = [];
+    if (!satellite._monitors.includes(launchMonitor)) satellite._monitors.push(launchMonitor);
+  } catch (e) {
+    // _satellite no admite el monitor — sin reglas de Launch, el resto sigue.
+  }
+}
+
+try {
+  currentSatellite = window._satellite;
+  attachLaunchMonitor(currentSatellite);
+  Object.defineProperty(window, '_satellite', {
+    configurable: true,
+    enumerable: true,
+    get() { return currentSatellite; },
+    set(value) {
+      currentSatellite = value;
+      attachLaunchMonitor(value);
+    },
+  });
+} catch (e) {
+  // window._satellite no se pudo instrumentar (p. ej. no configurable): si ya
+  // existe, el monitor quedó enganchado arriba; si no, no hay reglas de Launch.
+}
+
+// buildInfo/property/environment los completa la librería después de asignar
+// el objeto, así que se revisan hasta encontrarlos (máx. 30s, como Alloy).
+const launchInfoPoll = setInterval(() => {
+  postLaunchInfo();
+  if (launchInfoSent) clearInterval(launchInfoPoll);
+}, 500);
+setTimeout(() => clearInterval(launchInfoPoll), 30000);
 
 })();

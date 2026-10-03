@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Target Inspector** — a Chrome extension (Manifest V3) that intercepts Adobe Target / Alloy SDK personalization responses on **any http/https site** (`*://*/*`) and renders them in the popup: which A/B and XT activities fired, and which mboxes are in use vs. free.
+**Target Inspector** — a Chrome extension (Manifest V3) that intercepts Adobe Target / Alloy SDK personalization responses on **any http/https site** (`*://*/*`) and renders them in the popup: which A/B and XT activities fired (and whether Alloy actually rendered them), which mboxes are in use vs. free, the data-layer pushes, and the Adobe Launch (Tags) property and rules of the page.
 
 It works on any http/https site and the Adobe Target tenant used for the admin deep-links is user-configurable in the popup footer (`chrome.storage.local` key `tenant`). When `tenant` is empty, `getTargetUrl` returns `null` and the render hides the deep-links — the extension is otherwise fully functional.
 
@@ -30,6 +30,16 @@ Data flows one direction across two JavaScript worlds because of a Chrome constr
 inject.js  (world: MAIN, run_at: document_start)
   ├─ Registers a hook in window.__alloyMonitors → catches every Alloy network response
   │    + onInstanceConfigured → orgId/edgeConfigId/edgeDomain for the active instance
+  │    + onContentRendering/onContentHiding → renderEvent (status + activity IDs only;
+  │      measured shapes: started = {scope, propositions}, succeeded = {<scope>: [props]})
+  ├─ Launch: an accessor on window._satellite attaches a monitor to _satellite._monitors
+  │    (ruleCompleted / ruleConditionFailed) the moment the Launch library assigns its
+  │    object. It deliberately does NOT pre-create window._satellite (Adobe's documented
+  │    `window._satellite = window._satellite || {}` pattern): pages doing
+  │    `if (window._satellite) _satellite.track(...)` before Launch loads would throw.
+  │    Rules are batched (300ms) into one launchRules message; failed conditions are
+  │    summarized (extension, kind, detail like the cookie name) plus `code`: the customCode source (settings.source is a function → toString) or the settings as JSON for other kinds, capped at 8000 chars in content.js. Dedup includes `code` — two customCode conditions only differ there. Completed rules also carry `actions` (module, language, code or settings JSON, or `externalUrl` while an external customCode is still a URL), sent ONCE per rule per load by inject.js (`launchActionsSent`: some actions are ~90KB and scroll rules fire dozens of times) and capped at 12000 chars × 10 actions in content.js. Consequence: after Limpiar, rules that fire again come back without actions until the next load. The popup fills each code `<pre>` lazily on open (re-escaping every action on every batch was heavy).
+  │    launchInfo (property/environment/build) is polled until buildInfo exists (30s).
   ├─ Wraps every Alloy instance (window.alloy + names in window.__alloyNS) in a Proxy to
   │    read decisionScopes / personalization.decisionScopes before they're sent. Proxy, not a
   │    new function: the base snippet's queue keeps its .q, which the library reads on load.
@@ -41,7 +51,7 @@ inject.js  (world: MAIN, run_at: document_start)
   │    hooked — a plain-object digitalData (W3C style, e.g. bbva.pe) is left untouched.
   │    Each push carries `layer`, stored on the event.
   ├─ Whole file is one IIFE: nothing leaks into the page's globals except the guard,
-  │    __alloyMonitors and the two data-layer accessors. Each section has its own try/catch.
+  │    __alloyMonitors, the two data-layer accessors and the window._satellite accessor. Each section has its own try/catch.
   └─ Wrapped in a window.__mboxInspectorInjected guard — safe to reinject on demand
        │  window.postMessage({ source: 'mbox-inspector', type, ... })
        ▼
@@ -50,16 +60,21 @@ content.js (world: ISOLATED, run_at: document_start)
   ├─ Validates every message's shape/size before storing (the "mbox-inspector" marker
   │    authenticates nothing — any page script can post it; popup.js escapes on render too)
   ├─ On load: if origin+pathname+search changed vs. stored tabUrl, wipes requests/domMboxes/
-  │    instanceInfo — NOT digitalDataEvents, which persists across navigation on purpose
-  │    (each entry carries its own pageUrl; see "Event persistence" below)
+  │    instanceInfo/launchInfo — NOT digitalDataEvents, which persists across navigation on purpose
+  │    (each entry carries its own pageUrl; see "Event persistence" below).
+  │    renderEvents/launchRules are wiped on EVERY load, reloads included: they describe
+  │    one load, and keeping them doubled every rule's count (×2) on reload.
   └─ Wrapped in a window.__mboxInspectorContentActive guard — safe to reinject on demand
        │  chrome.storage.local: { requests[≤50], domMboxes[], digitalDataEvents[≤500],
-       │                          instanceInfo, tabUrl }
+       │                          instanceInfo, renderEvents[≤200], launchRules[≤400],
+       │                          launchInfo, tabUrl }
        ▼
 popup.js  (popup.html, mounted only inside the independent window)
   ├─ render()             → "Actividades" tab
   ├─ renderMboxes()       → "mBoxes" tab
   ├─ renderEventos()      → "Eventos" tab, grouped by page of the crawl (see below)
+  ├─ renderLaunch()       → "Launch" tab: property card (environment badge, warning when
+  │                          not production) + rules, chips by result, text search
   ├─ renderInstanceInfo() → footer: orgId/edgeConfigId of the page's Alloy instance
   └─ chrome.storage.onChanged → live re-render of the active tab
 
@@ -73,7 +88,11 @@ background.js (service worker)
        keeps the pointer so the next click can retarget)
 ```
 
-Message types (`content.js` switches on `event.data.type`): `alloyResponse` (full payload, unshifted onto `requests`, capped at 50), `domMboxes` (union-merged into `domMboxes`), `decisionScopes` (also merged into `domMboxes`, `__view__` filtered out), `instanceInfo` (orgId/edgeConfigId/edgeDomain, merged into a **list keyed by instance name** — sites like bbva.pe run two Alloy instances with different datastreams; the footer shows "N instancias" with all of them in the tooltip; a legacy single-object value is read as a one-item list), `digitalDataPush` (unshifted onto `digitalDataEvents` with `pageUrl` attached, capped at 500).
+Message types (`content.js` switches on `event.data.type`): `alloyResponse` (full payload, unshifted onto `requests`, capped at 50), `domMboxes` (union-merged into `domMboxes`), `decisionScopes` (also merged into `domMboxes`, `__view__` filtered out), `instanceInfo` (orgId/edgeConfigId/edgeDomain, merged into a **list keyed by instance name** — sites like bbva.pe run two Alloy instances with different datastreams; the footer shows "N instancias" with all of them in the tooltip; a legacy single-object value is read as a one-item list), `digitalDataPush` (unshifted onto `digitalDataEvents` with `pageUrl` attached, capped at 500), `renderEvent` (appended to `renderEvents` in arrival order — `getRenderState` in popup.js walks them in order — only known statuses accepted, capped at 200), `launchInfo` (replaces `launchInfo`), `launchRules` (a batch, **aggregated** into `launchRules` by `ruleId|status` with a `count`, first/last time and up to 5 distinct failed conditions; capped at 400 distinct entries).
+
+### Rendering state (`getRenderState`, Actividades)
+
+Per activity ID: `rendering-started` → *Sin confirmar* until `rendering-succeeded` (→ *Renderizada*) or `rendering-failed` (→ *Falló el render*, error in the tooltip). An activity that never appears gets *Sin render automático* — but only when at least one rendering event was captured; with none (capture started late, or old SDK) no badge is shown, since nothing is known. On bbva.pe the named-scope activities of the second instance correctly show *Sin render automático* (the page applies them). Prehiding (`hide-containers` → `show-containers`) becomes a note above the list with the hidden time in ms, or a warning if content is still hidden.
 
 ### Event persistence (`digitalDataEvents` survives navigation)
 
@@ -129,11 +148,11 @@ The summary line above the list (`#mbox-summary`) uses the same three categories
 
 ## Gotchas
 
-- `popup.js` hard-codes DOM IDs/classes it expects from `popup.html`: `#list`, `#count`, `#page-url`, `#ts`, `#mbox-list`, `#clear`, `#tenant-input`, `#edge-info`, `#mbox-summary`, `#toast`/`#toast-text`/`#toast-action`, `.tabs__item[data-tab]` (real `<button role="tab">`s — keyboard nav lives in `activateTab`), `.panel`, `.url-bar__indicator` (state via `--ok/--warn/--error` modifiers, set by `setIndicator`, never inline styles). Renaming in the HTML silently breaks rendering (e.g. `#tenant-input` is read by `setupTenantInput`).
+- `popup.js` hard-codes DOM IDs/classes it expects from `popup.html`: `#list`, `#count`, `#page-url`, `#ts`, `#mbox-list`, `#clear`, `#tenant-input`, `#edge-info`, `#mbox-summary`, `#toast`/`#toast-text`/`#toast-action`, `#launch-info`, `#launch-list`, `#launch-filters`, `#launch-search`/`#launch-search-bar`, `.tabs__item[data-tab]` (real `<button role="tab">`s — keyboard nav lives in `activateTab`), `.panel`, `.url-bar__indicator` (state via `--ok/--warn/--error` modifiers, set by `setIndicator`, never inline styles). Renaming in the HTML silently breaks rendering (e.g. `#tenant-input` is read by `setupTenantInput`).
 - Every captured value interpolated into `innerHTML` goes through `escapeHtml` (which also escapes quotes, since values land in `title`/`href`/`data-*` attributes). The extension runs on arbitrary sites and the page controls activity names, scopes, mbox names and event payloads — MV3's CSP blocks inline scripts but not injected links/iframes/forms. Don't add a template interpolation of payload data without it.
 - Colors, type sizes and fonts are tokens on `:root` in `popup.html` (semantic names: `--ink-3`, `--type-ab`, `--danger`…). Every text/background pair was measured at ≥4.5:1, and the type floor is 11px — add new UI through the tokens, not raw hex or smaller sizes.
 - Fonts are bundled (`assets/fonts/`, IBM Plex latin subset, OFL license alongside) and declared with `@font-face` in `popup.html` — the window makes no external requests. Don't reintroduce the Google Fonts `<link>`.
-- "Página no inspeccionable" / "pestaña cerrada" are a terminal state (`blockedState`, set via `setBlocked`): every render function starts with `showBlockedIn(listId)` and bails if it's set, so all three tabs show the notice and live updates from other tabs can't paint over it. A new render function needs the same guard.
+- "Página no inspeccionable" / "pestaña cerrada" are a terminal state (`blockedState`, set via `setBlocked`): every render function starts with `showBlockedIn(listId)` and bails if it's set, so all four tabs show the notice and live updates from other tabs can't paint over it. A new render function needs the same guard.
 - Live re-renders (`storage.onChanged`) replace each list's `innerHTML`, so anything the user opened is tracked in memory (`openActivityContent`, `pageExpandOverrides`, `expandedEventGroups`, `openEventPayloads`) and restored with `scrollTop`. A new collapsible needs the same treatment or it'll snap shut on every incoming event.
 - There is **no** allowed-domain list anymore. Injection is gated only by the `manifest.json` `host_permissions` + both `content_scripts.matches` blocks (all `*://*/*`); the popup's `isAllowedDomain` just checks the protocol is http/https so it can show the "no inspeccionable" state on `chrome://`/`about:` pages.
 - Permissions are deliberately minimal for the Chrome Web Store: `storage` + `scripting` + `host_permissions: *://*/*`. There is **no** `tabs` permission — the host permission already exposes `tab.url` for http/https tabs, and on `chrome://` pages `url` comes back `undefined`, which `isAllowedDomain` treats as "no inspeccionable". Don't add `tabs` back; the Store flags unused permissions.
