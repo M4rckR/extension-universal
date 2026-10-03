@@ -67,7 +67,7 @@ function emptyStateHtml(icon, html, withInject = false, warn = false) {
 // en <body> con cada hit o regla nueva. Antes de repintar se anota qué
 // estaba enfocado (el data-key más cercano + el control adentro) y después
 // se vuelve a enfocar su equivalente.
-const FOCUS_ATTRS = ["id", "data-copy", "data-copy-event", "data-copy-code", "data-copy-hit", "data-goto", "data-idx", "data-event", "data-status", "href"];
+const FOCUS_ATTRS = ["id", "data-hit-toggle", "data-copy", "data-copy-event", "data-copy-code", "data-copy-hit", "data-goto", "data-idx", "data-event", "data-status", "href"];
 
 function focusDescriptor(root) {
   const el = document.activeElement;
@@ -1867,18 +1867,38 @@ function hitJson(value) {
   }
 }
 
-/** Desplegable de Request o Response de un hit; el <pre> se llena al abrir, como en Launch. */
-function hitBlockHtml(h, which, value, title = "") {
-  if (value === undefined || value === null) return "";
-  const key = `${h.requestId}|${which}`;
-  const open = openHitBlocks.has(key);
-  const label = which === "req" ? "Request" : "Response";
-  return `
-    <details class="hit-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
-      <summary class="raw-summary"${title ? ` aria-label="${label} de ${escapeHtml(title)}"` : ""}>${label}</summary>
-      <pre class="raw-pre">${open ? escapeHtml(hitJson(value)) : ""}</pre>
-      <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">Copiar ${label.toLowerCase()}</button>
-    </details>`;
+/**
+ * Request y Response de un hit: dos botones en un mismo renglón y un panel
+ * por cada uno (antes eran dos <details> apilados: ocupaban un renglón cada
+ * uno en las 27 filas, y con la ventana ancha no había forma de poner el
+ * payload al costado). Devuelve { toggles, panels }; el <pre> se llena al
+ * abrir, como en Launch.
+ */
+function hitBlocksHtml(h, title) {
+  const blocks = [
+    ["req", "Request", h.body],
+    ["res", "Response", lastHitResponses.get(h.requestId)],
+  ].filter(([, , value]) => value !== undefined && value !== null);
+  const toggles = blocks
+    .map(([which, label]) => {
+      const key = `${h.requestId}|${which}`;
+      const open = openHitBlocks.has(key);
+      return `<button class="hit-row__toggle" data-hit-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-label="${label} de ${escapeHtml(title)}">${iconSvg("chevron", "hit-row__chevron")}${label}</button>`;
+    })
+    .join("");
+  const panels = blocks
+    .map(([which, label, value]) => {
+      const key = `${h.requestId}|${which}`;
+      const open = openHitBlocks.has(key);
+      return `
+      <div class="hit-row__panel" data-key="${escapeHtml(key)}"${open ? "" : " hidden"}>
+        <div class="hit-row__panel-label">${label}</div>
+        <pre class="raw-pre">${open ? escapeHtml(hitJson(value)) : ""}</pre>
+        <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">Copiar ${label.toLowerCase()}</button>
+      </div>`;
+    })
+    .join("");
+  return { toggles, panels };
 }
 
 function hitBlockValue(key) {
@@ -1968,8 +1988,10 @@ function renderHits() {
                })
                .join("")}</ul>`
           : "";
+        const blocks = hitBlocksHtml(h, title);
         return `
         <div class="hit-row" data-key="${escapeHtml(h.requestId)}|row">
+          <div class="hit-row__main">
           <div class="hit-row__header">
             <span class="event-tag" title="${escapeHtml(h.url || "")}">${escapeHtml(h.endpoint || "?")}</span>
             ${hitStatusBadge(h)}
@@ -1980,8 +2002,9 @@ function renderHits() {
           ${meta.map((m) => `<div class="hit-row__meta">${m}</div>`).join("")}
           ${displayed}
           ${h.error ? `<div class="hit-row__meta">Error: ${escapeHtml(h.error)}</div>` : ""}
-          ${hitBlockHtml(h, "req", h.body, title)}
-          ${hitBlockHtml(h, "res", lastHitResponses.get(h.requestId), title)}
+          ${blocks.toggles ? `<div class="hit-row__toggles">${blocks.toggles}</div>` : ""}
+          </div>
+          ${blocks.panels ? `<div class="hit-row__panels">${blocks.panels}</div>` : ""}
         </div>
       `;
       })
@@ -1999,21 +2022,24 @@ document.getElementById("hits-list").addEventListener("click", (e) => {
   copyText(hitJson(value), btn.dataset.copyHit.endsWith("|req") ? "Request copiado." : "Response copiada.");
 });
 
-document.getElementById("hits-list").addEventListener(
-  "toggle",
-  (e) => {
-    if (!e.target.classList?.contains("hit-row__code")) return;
-    const key = e.target.dataset.key;
-    if (e.target.open) {
-      openHitBlocks.add(key);
-      const pre = e.target.querySelector(".raw-pre");
-      if (pre && !pre.textContent) pre.textContent = hitJson(hitBlockValue(key));
-    } else {
-      openHitBlocks.delete(key);
-    }
-  },
-  true,
-);
+// Abrir/cerrar Request o Response: el panel se llena la primera vez que se abre.
+document.getElementById("hits-list").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-hit-toggle]");
+  if (!btn) return;
+  const key = btn.dataset.hitToggle;
+  const panel = [...btn.closest(".hit-row").querySelectorAll(".hit-row__panel")].find((p) => p.dataset.key === key);
+  if (!panel) return;
+  const open = panel.hidden;
+  panel.hidden = !open;
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) {
+    openHitBlocks.add(key);
+    const pre = panel.querySelector(".raw-pre");
+    if (!pre.textContent) pre.textContent = hitJson(hitBlockValue(key));
+  } else {
+    openHitBlocks.delete(key);
+  }
+});
 
 // Atajos entre pestañas: los diagnósticos y avisos nombran la pestaña donde
 // está el detalle ("Abre Hits") — un botón la activa, en vez de pedirle al

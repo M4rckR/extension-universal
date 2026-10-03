@@ -932,8 +932,62 @@
         font-size: var(--fs-meta);
         color: var(--ink-2);
       }
-      .hit-row__code {
-        margin-top: 4px;
+/* Request / Response: dos botones en un renglón, panel debajo (o al
+         costado con la ventana ancha — ver el @media de abajo). */
+      .hit-row__toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 18px;
+        margin-top: 2px;
+      }
+      .hit-row__toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 0;
+        background: none;
+        border: none;
+        font-size: var(--fs-sm);
+        font-weight: 500;
+        color: var(--accent);
+      }
+      .hit-row__toggle:hover {
+        color: var(--accent-strong);
+      }
+      .hit-row__chevron {
+        font-size: 11px;
+        transition: transform 0.15s;
+      }
+      .hit-row__toggle[aria-expanded="true"] .hit-row__chevron {
+        transform: rotate(90deg);
+      }
+      .hit-row__panel {
+        margin-top: 6px;
+      }
+      .hit-row__panel[hidden] {
+        display: none;
+      }
+      .hit-row__panel-label {
+        font-size: var(--fs-meta);
+        font-weight: 600;
+        color: var(--ink-2);
+      }
+      .hit-row__panel + .hit-row__panel {
+        margin-top: 12px;
+      }
+      /* Ventana ancha: la fila con un payload abierto pasa a dos columnas —
+         resumen a la izquierda, payload a la derecha, a todo el alto útil. */
+      @media (min-width: 800px) {
+        .hit-row:has(.hit-row__panel:not([hidden])) {
+          display: grid;
+          grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+          column-gap: 24px;
+          align-items: start;
+        }
+        .hit-row__panels .hit-row__panel:first-child,
+        .hit-row__panels .hit-row__panel[hidden] + .hit-row__panel {
+          margin-top: 0;
+        }
       }
       .status-badge--hit-ok {
         background: var(--ok-bg);
@@ -1206,7 +1260,9 @@
         line-height: 1.5;
         white-space: pre-wrap;
         word-break: break-word;
-        max-height: 200px;
+        /* Crece con la ventana: 200px fijos obligaban a leer una respuesta de
+           100KB de a ocho líneas, por alta que fuera la ventana. */
+        max-height: clamp(200px, 55vh, 560px);
         overflow-y: auto;
         color: var(--ink);
       }
