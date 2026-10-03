@@ -119,7 +119,7 @@ datos. Marcar las tres certificaciones:
 - No uso ni transfiero datos de usuarios para fines no relacionados con el propósito único del artículo.
 - No uso ni transfiero datos de usuarios para determinar la solvencia crediticia ni para otorgar préstamos.
 
-**URL de la política de privacidad:** el `PRIVACY.md` publicado, por ejemplo
+**URL de la política de privacidad** (un solo campo para todos los idiomas; el archivo trae español e inglés): el `PRIVACY.md` publicado, por ejemplo
 `https://github.com/M4rckR/extension-universal/blob/main/PRIVACY.md`
 (el repositorio tiene que ser público, o hay que alojar el texto en otra URL
 pública).
