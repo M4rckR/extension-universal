@@ -532,7 +532,22 @@
       /* ── Sección mBoxes (al final de Actividades) ─────────
          Antes era una pestaña propia, vacía o de una fila en los 17 sitios
          probados y la que empujaba "Launch" fuera de la ventana a 380px. */
+      .mbox-dock {
+        flex-shrink: 0;
+      }
+      .mbox-dock:empty {
+        display: none;
+      }
       .mbox-section {
+        border-top: 1px solid var(--line);
+      }
+      /* Abierta, las filas scrollean adentro: la lista de actividades de
+         arriba no pierde todo su alto. */
+      .mbox-section__rows {
+        max-height: 38vh;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
         border-top: 1px solid var(--line);
       }
       .mbox-section__summary {
@@ -555,6 +570,14 @@
       }
       .mbox-section__summary:focus-visible {
         outline-offset: -2px;
+      }
+      /* Sin mboxes: la misma franja, pero no se abre (no hay nada adentro). */
+      .mbox-section__summary--static {
+        cursor: default;
+        align-items: baseline;
+      }
+      .mbox-section__summary--static:hover {
+        background: var(--bg-alt);
       }
       .mbox-section__summary b {
         color: var(--ink);
@@ -1449,6 +1472,7 @@
       aria-labelledby="tab-actividades"
     >
       <div class="list" id="list"></div>
+      <div class="mbox-dock" id="mbox-dock"></div>
     </section>
 
     <section class="panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos">

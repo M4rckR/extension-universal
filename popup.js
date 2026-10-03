@@ -120,6 +120,7 @@ function setBlocked(icon, html, urlText) {
   document.getElementById("page-url").textContent = urlText;
   setIndicator("error");
   showBlockedIn("list");
+  document.getElementById("mbox-dock").innerHTML = "";
   showBlockedIn("event-list");
   showBlockedIn("launch-list");
   showBlockedIn("hits-list");
@@ -189,6 +190,7 @@ function showStale(tabUrl) {
       return tabUrl;
     }
   })();
+  document.getElementById("mbox-dock").innerHTML = "";
   document.getElementById("list").innerHTML = emptyStateHtml(
     "refresh",
     `Página distinta a la captura.<br>Recarga <strong>${escapeHtml(host)}</strong> para capturar.`,
@@ -552,7 +554,8 @@ function render(currentTabUrl) {
           reason ||
             "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
           !reason,
-        ) + mboxSectionHtml([], data.domMboxes || []);
+        );
+      renderMboxDock([], data.domMboxes || []);
       count.textContent = "0 ACT";
       // Sin capturas no hay "última": tras Limpiar no debe quedar la hora vieja.
       ts.textContent = "—";
@@ -595,7 +598,8 @@ function render(currentTabUrl) {
           "target",
           whyNoActivitiesHtml(data) ||
             `Alloy recibió ${requests.length} ${requests.length === 1 ? "respuesta" : "respuestas"} del Edge, pero ninguna trajo actividades de Target para esta página.`,
-        ) + mboxSectionHtml(requests, data.domMboxes || []);
+        );
+      renderMboxDock(requests, data.domMboxes || []);
       return;
     }
 
@@ -673,8 +677,8 @@ function render(currentTabUrl) {
       prehidingNoteHtml(renderState.prehiding) +
       displayNote +
       tenantNote +
-      rowsHtml +
-      mboxSectionHtml(requests, data.domMboxes || []);
+      rowsHtml;
+    renderMboxDock(requests, data.domMboxes || []);
     list.scrollTop = scrollTop;
   });
 }
@@ -982,10 +986,24 @@ tabItems.forEach((tab, i) => {
  * vacía o de una fila en los 17 sitios probados, y la que dejaba "Launch"
  * fuera de la ventana a 380px). Cruza los [data-mbox] del DOM con los scopes
  * que Target respondió y los clasifica en En uso / Libres / Solo Alloy.
- * Devuelve "" si no hay ningún mbox ni scope nombrado (páginas 100% VEC):
- * ahí no hay nada que mostrar y la sección no aparece.
+ * Sin ningún mbox ni scope nombrado (páginas 100% VEC) la sección igual
+ * aparece, con una línea que lo dice: cuando se omitía del todo parecía que
+ * los mBoxes habían desaparecido de la extensión. Solo devuelve "" si además
+ * no hubo ninguna respuesta de Target (ahí el estado vacío ya lo explica).
  */
+// Va en una franja fija debajo de la lista (#mbox-dock), no adentro: al final
+// de una lista con scroll nadie la encontraba. Cerrada por defecto — la franja
+// con el resumen siempre está a la vista; al abrirla, sus filas scrollean aparte.
 let mboxSectionOpen = false;
+
+function renderMboxDock(requests, domMboxes) {
+  const dock = document.getElementById("mbox-dock");
+  const scroller = dock.querySelector(".mbox-section__rows");
+  const scrollTop = scroller ? scroller.scrollTop : 0;
+  dock.innerHTML = mboxSectionHtml(requests, domMboxes);
+  const next = dock.querySelector(".mbox-section__rows");
+  if (next) next.scrollTop = scrollTop;
+}
 
 function mboxSectionHtml(requests, domMboxes) {
   // scope → nombres de TODAS las actividades que respondieron en él (antes
@@ -1006,7 +1024,16 @@ function mboxSectionHtml(requests, domMboxes) {
   const activeSet = new Set(activeMboxes.keys());
   const domSet = new Set(domMboxes);
   const allMboxes = new Set([...domSet, ...activeSet]);
-  if (allMboxes.size === 0) return "";
+  if (allMboxes.size === 0) {
+    if (requests.length === 0) return "";
+    return `
+    <div class="mbox-section mbox-section--empty">
+      <div class="mbox-section__summary mbox-section__summary--static">
+        <span class="mbox-section__title">mBoxes</span>
+        <span>Esta página no usa mboxes con nombre ni elementos <span class="mono">[data-mbox]</span>: todo corre por VEC (<span class="mono">__view__</span>).</span>
+      </div>
+    </div>`;
+  }
 
   // Mismas tres categorías que los badges de cada fila, así el resumen
   // siempre suma: En uso + Libres = mboxes del DOM, y Alloy va aparte.
@@ -1069,7 +1096,7 @@ function mboxSectionHtml(requests, domMboxes) {
         <span class="mbox-section__title">mBoxes</span>
         <span>${summary}</span>
       </summary>
-      ${rows}
+      <div class="mbox-section__rows">${rows}</div>
     </details>`;
 }
 
@@ -1912,7 +1939,7 @@ document.addEventListener("click", (e) => {
 });
 
 // Sección mBoxes de Actividades: recuerda si quedó abierta entre repintadas.
-document.getElementById("list").addEventListener(
+document.getElementById("mbox-dock").addEventListener(
   "toggle",
   (e) => {
     if (e.target.classList?.contains("mbox-section")) mboxSectionOpen = e.target.open;
