@@ -120,10 +120,10 @@ function setBlocked(icon, html, urlText) {
   document.getElementById("page-url").textContent = urlText;
   setIndicator("error");
   showBlockedIn("list");
-  showBlockedIn("mbox-list");
   showBlockedIn("event-list");
   showBlockedIn("launch-list");
-  document.getElementById("mbox-summary").hidden = true;
+  showBlockedIn("hits-list");
+  document.getElementById("hits-summary").hidden = true;
   document.getElementById("event-filters").innerHTML = "";
   document.getElementById("event-search-bar").hidden = true;
   document.getElementById("launch-info").hidden = true;
@@ -455,6 +455,64 @@ function prehidingNoteHtml(prehiding) {
   return "";
 }
 
+// Cookies que suelen ser de consentimiento (OneTrust, Cookiebot, banners
+// propios). Heurística por nombre: solo decide qué texto mostrar, nunca qué
+// se captura.
+const CONSENT_COOKIE_RE = /consent|politica|privacidad|privacy|gdpr|optanon|cookielaw|cookiebot|cmp|euconsent/i;
+const TARGET_RULE_RE = /target|personaliz|alloy|web ?sdk|aep/i;
+
+/**
+ * Por qué Actividades está vacía, cuando los datos lo dicen. Devuelve HTML
+ * (todo valor capturado escapado) o "" si no hay nada que explicar. En orden:
+ *   1. at.js sin Alloy: la extensión inspecciona Web SDK (medido en
+ *      allianz.com, canada.ca, pwc.com, whirlpool.com, infosys.com).
+ *   2. Una regla de Target que no corrió por una cookie de consentimiento
+ *      (viabcp.com sin aceptar cookies: "Adobe Target" exige
+ *      politica_privacidad_personalizacion y Target nunca se llama).
+ *   3. Varias reglas esperando una cookie de consentimiento.
+ *   4. Alloy configurado: con llamadas pero sin actividades, o sin llamadas.
+ * Una regla "de Target" que falló por path/valueComparison NO se usa como
+ * motivo: en nvidia.com o whirlpool.com hay decenas, de otras páginas, y
+ * señalar una era engañoso.
+ */
+function whyNoActivitiesHtml(data) {
+  const instances = Array.isArray(data.instanceInfo) ? data.instanceInfo : data.instanceInfo ? [data.instanceInfo] : [];
+  const hits = data.hits || [];
+  const decisionCalls = hits.filter((h) => (h.scopes || []).length > 0 || (h.eventTypes || []).includes("decisioning.propositionFetch"));
+
+  if (data.pageSdk?.atjs && instances.length === 0) {
+    const v = data.pageSdk.atjsVersion ? ` ${escapeHtml(data.pageSdk.atjsVersion)}` : "";
+    return `Esta página usa <strong>at.js${v}</strong> (Adobe Target clásico), no Web SDK (Alloy).<br>La extensión inspecciona Web SDK: acá funcionan <button class="inline-link" data-goto="launch">Launch</button> y <button class="inline-link" data-goto="eventos">Eventos</button>, no Actividades.`;
+  }
+
+  const failed = (data.launchRules || []).filter((r) => r.status === "failed");
+  const condText = (c) =>
+    `<strong>${escapeHtml([c.extension, c.kind].filter(Boolean).join(" · "))}</strong>${c.detail ? " " + escapeHtml(c.detail) : ""}`;
+  const consentCond = (r) => (r.conditions || []).find((c) => c.kind === "cookie" && CONSENT_COOKIE_RE.test(c.detail || ""));
+
+  if (decisionCalls.length === 0) {
+    const targetRule = failed.find((r) => TARGET_RULE_RE.test(r.ruleName || "") && consentCond(r));
+    if (targetRule) {
+      return `Launch no ejecutó la regla <strong>${escapeHtml(targetRule.ruleName)}</strong>: no se cumplió ${condText(consentCond(targetRule))}.<br>Parece la cookie de consentimiento: acepta las cookies del sitio y recarga.`;
+    }
+    const consentBlocked = failed.filter(consentCond);
+    if (consentBlocked.length > 0) {
+      return `${consentBlocked.length} ${consentBlocked.length === 1 ? "regla de Launch espera" : "reglas de Launch esperan"} una cookie de consentimiento (p. ej. ${condText(consentCond(consentBlocked[0]))}) y Alloy no pidió decisiones a Target.<br>Acepta las cookies del sitio y recarga.`;
+    }
+  }
+
+  if (instances.length > 0) {
+    if (decisionCalls.length > 0) {
+      const noOffers = (data.renderEvents || []).some((e) => e.status === "no-offers");
+      return `Alloy pidió decisiones a Target${decisionCalls.length > 1 ? ` ${decisionCalls.length} veces` : ""}, pero no vino ninguna actividad para esta página${noOffers ? " (Alloy informó <span class=\"mono\">no-offers</span>)" : ""}.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se pidió y qué respondió.`;
+    }
+    return hits.length > 0
+      ? `Alloy hizo ${hits.length} ${hits.length === 1 ? "llamada" : "llamadas"} al Edge, pero ninguna pidió decisiones a Target.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se envió.`
+      : "Alloy está configurado, pero no envió ninguna llamada al Edge en esta carga.<br>Abre <button class=\"inline-link\" data-goto=\"launch\">Launch</button>: puede que la regla que lo dispara no se haya cumplido.";
+  }
+  return "";
+}
+
 /** Clave de "misma página" para comparar la pestaña con lo capturado: incluye el query string (dos productos distintos bajo el mismo path no son la misma página), excluye el fragmento. */
 function pageKey(url) {
   const u = new URL(url);
@@ -466,7 +524,7 @@ function pageKey(url) {
  * Lee requests del storage, deduplica por activity.id y genera el listado.
  */
 function render(currentTabUrl) {
-  chrome.storage.local.get(["requests", "tabUrl", "renderEvents"], (data) => {
+  chrome.storage.local.get(["requests", "tabUrl", "renderEvents", "launchRules", "instanceInfo", "hits", "pageSdk", "domMboxes"], (data) => {
     if (showBlockedIn("list")) return;
     const requests = data.requests || [];
     const tabUrl = data.tabUrl || "";
@@ -485,11 +543,16 @@ function render(currentTabUrl) {
     } catch (e) {}
 
     if (requests.length === 0) {
-      list.innerHTML = emptyStateHtml(
-        "signal",
-        "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
-        true,
-      );
+      // Con un motivo concreto no se ofrece "Capturar ahora": reinyectar no
+      // arregla una cookie que falta ni una regla que no corrió.
+      const reason = whyNoActivitiesHtml(data);
+      list.innerHTML =
+        emptyStateHtml(
+          "signal",
+          reason ||
+            "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
+          !reason,
+        ) + mboxSectionHtml([], data.domMboxes || []);
       count.textContent = "0 ACT";
       // Sin capturas no hay "última": tras Limpiar no debe quedar la hora vieja.
       ts.textContent = "—";
@@ -523,6 +586,29 @@ function render(currentTabUrl) {
 
     count.textContent = `${unique.length} ACT`;
 
+    // Hubo respuestas pero ninguna trajo actividades (identidad, consentimiento,
+    // no-offers — medido en elpais.com, ibm.com, redhat.com): antes la lista
+    // quedaba vacía con solo el aviso del tenant, sin decir nada.
+    if (unique.length === 0) {
+      list.innerHTML =
+        emptyStateHtml(
+          "target",
+          whyNoActivitiesHtml(data) ||
+            `Alloy recibió ${requests.length} ${requests.length === 1 ? "respuesta" : "respuestas"} del Edge, pero ninguna trajo actividades de Target para esta página.`,
+        ) + mboxSectionHtml(requests, data.domMboxes || []);
+      return;
+    }
+
+    // Impresión: Target cuenta una actividad recién cuando Alloy le notifica
+    // el display (decisioning.propositionDisplay, o propuestas en el
+    // _experience de otro evento — ver summarizeHitBody en content.js). Solo
+    // se evalúa si se capturaron hits en esta carga: sin hits no se sabe nada,
+    // y afirmar "no notificada" sería falso (p. ej. captura iniciada tarde).
+    const hits = data.hits || [];
+    const displayed = new Set(hits.flatMap((h) => h.displayedActivities || []));
+    const knowsDisplay = hits.length > 0;
+    let renderedWithoutDisplay = 0;
+
     lastRenderedDecisions = unique;
 
     // Todo valor que sale del payload (nombre, scope, experiencia, id) pasa
@@ -539,6 +625,8 @@ function render(currentTabUrl) {
         const urlXT = !actType ? getTargetUrl("XT", id) : null;
         const domAction = getDomActionData(d);
         const rendered = renderState.byActivity.get(String(id)) || (renderState.hasRendering ? { status: "none" } : null);
+        const notified = displayed.has(String(id));
+        if (knowsDisplay && rendered?.status === "ok" && !notified) renderedWithoutDisplay += 1;
 
         let actionsHtml = "";
         if (targetUrl) {
@@ -561,6 +649,7 @@ function render(currentTabUrl) {
           <div class="activity__meta">
             <button class="activity__id" data-copy="${escapeHtml(id)}" title="Copiar ID de la actividad">#${escapeHtml(id)}</button>
             ${exp ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__experience">${escapeHtml(exp)}</span>` : ""}
+            ${knowsDisplay && notified ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display" title="Alloy notificó el display a Target: la impresión se cuenta">impresión notificada</span>` : ""}
           </div>
           ${actionsHtml ? `<div class="activity__actions">${actionsHtml}</div>` : ""}
           ${domAction ? renderActivityContent(domAction, idx, id) : ""}
@@ -575,8 +664,17 @@ function render(currentTabUrl) {
       ? ""
       : `<div class="list__note"><span>Configura el tenant para abrir actividades en Target.</span><button class="list__note-action" id="focus-tenant">Configurar</button></div>`;
 
+    const displayNote = renderedWithoutDisplay
+      ? `<div class="list__note list__note--warn"><span>${renderedWithoutDisplay} ${renderedWithoutDisplay === 1 ? "actividad renderizada no notificó" : "actividades renderizadas no notificaron"} el display en esta carga: Target cuenta la impresión recién cuando se notifica.</span><button class="list__note-action" data-goto="hits">Ver Hits</button></div>`
+      : "";
+
     const scrollTop = list.scrollTop;
-    list.innerHTML = prehidingNoteHtml(renderState.prehiding) + tenantNote + rowsHtml;
+    list.innerHTML =
+      prehidingNoteHtml(renderState.prehiding) +
+      displayNote +
+      tenantNote +
+      rowsHtml +
+      mboxSectionHtml(requests, data.domMboxes || []);
     list.scrollTop = scrollTop;
   });
 }
@@ -660,7 +758,7 @@ document.getElementById("list").addEventListener("click", (e) => {
  * de página de content.js. launchInfo e instanceInfo quedan: son la
  * configuración de la página, no capturas.
  */
-const CLEARABLE_KEYS = ["requests", "domMboxes", "digitalDataEvents", "renderEvents", "launchRules"];
+const CLEARABLE_KEYS = ["requests", "domMboxes", "digitalDataEvents", "renderEvents", "launchRules", "hits"];
 
 function clearCapturedData(callback) {
   chrome.storage.local.set(Object.fromEntries(CLEARABLE_KEYS.map((k) => [k, []])), () => {
@@ -700,6 +798,7 @@ document.getElementById("clear").addEventListener("click", () => {
                 digitalDataEvents: [...(now.digitalDataEvents || []), ...(before.digitalDataEvents || [])].slice(0, 500),
                 // renderEvents va en orden de llegada (más viejo primero).
                 renderEvents: [...(before.renderEvents || []), ...(now.renderEvents || [])].slice(-200),
+                hits: [...(before.hits || []), ...(now.hits || [])].slice(-100),
                 launchRules: [
                   ...(before.launchRules || []).filter((r) => !nowRuleKeys.has(r.key)),
                   ...(now.launchRules || []),
@@ -856,9 +955,9 @@ function activateTab(tab) {
   document
     .getElementById(`panel-${tab.dataset.tab}`)
     .classList.add("panel--active");
-  if (tab.dataset.tab === "mboxes") renderMboxes();
   if (tab.dataset.tab === "eventos") renderEventos();
   if (tab.dataset.tab === "launch") renderLaunch();
+  if (tab.dataset.tab === "hits") renderHits();
 }
 
 tabItems.forEach((tab, i) => {
@@ -879,118 +978,99 @@ tabItems.forEach((tab, i) => {
 });
 
 /**
- * Renderiza la pestaña "mBoxes".
- * Cruza los mboxes encontrados en el DOM con los que Target respondió,
- * y los clasifica en: En uso / Libres / Solo Alloy.
+ * Sección "mBoxes" al final de Actividades (antes era una pestaña propia:
+ * vacía o de una fila en los 17 sitios probados, y la que dejaba "Launch"
+ * fuera de la ventana a 380px). Cruza los [data-mbox] del DOM con los scopes
+ * que Target respondió y los clasifica en En uso / Libres / Solo Alloy.
+ * Devuelve "" si no hay ningún mbox ni scope nombrado (páginas 100% VEC):
+ * ahí no hay nada que mostrar y la sección no aparece.
  */
-function renderMboxes() {
-  chrome.storage.local.get(["requests", "domMboxes"], (data) => {
-    if (showBlockedIn("mbox-list")) return;
-    const requests = data.requests || [];
-    const domMboxes = data.domMboxes || [];
+let mboxSectionOpen = false;
 
-    // Construye un mapa scope → nombre de actividad a partir de las respuestas de Target
-    const activeMboxes = new Map();
-    requests.forEach((r) => {
-      const decisions =
-        r.payload?.handle
-          ?.filter((h) => h.type === "personalization:decisions")
-          ?.flatMap((h) => h.payload) || [];
-      decisions.forEach((d) => {
-        if (d.scope && d.scope !== "__view__") {
-          const meta = d.items?.[0]?.meta;
-          const name =
-            meta?.["activity.name"] || d.scopeDetails?.activity?.name || null;
-          if (!activeMboxes.has(d.scope)) activeMboxes.set(d.scope, name);
-        }
-      });
+function mboxSectionHtml(requests, domMboxes) {
+  // scope → nombres de TODAS las actividades que respondieron en él (antes
+  // se guardaba solo la primera, y bbva.pe mostraba una actividad distinta a
+  // las dos que Actividades listaba para el mismo scope).
+  const activeMboxes = new Map();
+  requests.forEach((r) => {
+    const decisions =
+      r.payload?.handle?.filter((h) => h.type === "personalization:decisions")?.flatMap((h) => h.payload) || [];
+    decisions.forEach((d) => {
+      if (!d.scope || d.scope === "__view__") return;
+      const name = d.items?.[0]?.meta?.["activity.name"] || d.scopeDetails?.activity?.name || null;
+      if (!activeMboxes.has(d.scope)) activeMboxes.set(d.scope, new Set());
+      if (name) activeMboxes.get(d.scope).add(name);
     });
+  });
 
-    const activeSet = new Set(activeMboxes.keys());
-    const domSet = new Set(domMboxes);
+  const activeSet = new Set(activeMboxes.keys());
+  const domSet = new Set(domMboxes);
+  const allMboxes = new Set([...domSet, ...activeSet]);
+  if (allMboxes.size === 0) return "";
 
-    // Mismas tres categorías que los badges de cada fila, así el resumen
-    // siempre suma: En uso + Libres = mboxes del DOM, y Alloy va aparte.
-    // (Antes "En uso" contaba también los scopes solo-Alloy, y En uso +
-    // Libres no coincidía con el total del DOM.)
-    const enUso = [...domSet].filter((m) => activeSet.has(m)).length;
-    const libres = domSet.size - enUso;
-    const soloAlloy = [...activeSet].filter((m) => !domSet.has(m)).length;
+  // Mismas tres categorías que los badges de cada fila, así el resumen
+  // siempre suma: En uso + Libres = mboxes del DOM, y Alloy va aparte.
+  const enUso = [...domSet].filter((m) => activeSet.has(m)).length;
+  const libres = domSet.size - enUso;
+  const soloAlloy = [...activeSet].filter((m) => !domSet.has(m)).length;
+  const summary = [
+    `<b>${enUso}</b> en uso`,
+    `<b>${libres}</b> ${libres === 1 ? "libre" : "libres"}`,
+    `<b>${soloAlloy}</b> solo Alloy`,
+    `<span title="Elementos [data-mbox] encontrados en la página">${domSet.size} en el DOM</span>`,
+  ].join(" · ");
 
-    const allMboxes = new Set([...domSet, ...activeSet]);
-    const summary = document.getElementById("mbox-summary");
-    summary.hidden = allMboxes.size === 0;
-    summary.innerHTML = [
-      `<b>${enUso}</b> en uso`,
-      `<b>${libres}</b> ${libres === 1 ? "libre" : "libres"}`,
-      `<b>${soloAlloy}</b> solo Alloy`,
-      `<span title="Elementos [data-mbox] encontrados en la página">${domSet.size} en el DOM</span>`,
-    ].join(" · ");
+  // Orden: activos primero, luego libres; alfabético dentro de cada grupo
+  const sorted = [...allMboxes].sort((a, b) => {
+    const aA = activeSet.has(a),
+      bA = activeSet.has(b);
+    if (aA && !bA) return -1;
+    if (!aA && bA) return 1;
+    return String(a).localeCompare(String(b));
+  });
 
-    if (allMboxes.size === 0) {
-      // Dos motivos posibles y NO son lo mismo: "todavía no capturamos nada"
-      // (requests vacío, hace falta recargar) vs. "sí capturamos, pero la
-      // página no tiene ni un [data-mbox] ni un scope nombrado — todo es VEC
-      // (__view__), que se excluye a propósito de esta clasificación". El
-      // segundo caso mostraba el mismo "Sin datos aún, recargá" que el
-      // primero, lo cual hacía parecer que la captura había fallado cuando
-      // en realidad sí había actividades (visibles en Actividades).
-      document.getElementById("mbox-list").innerHTML =
-        requests.length === 0
-          ? emptyStateHtml("box", "Sin datos aún.<br>Recarga la página con la extensión activa.", true)
-          : emptyStateHtml(
-              "target",
-              `Esta página no usa mboxes nombrados — todo corre por VEC (<span class="mono">__view__</span>).<br>Mira la pestaña <strong>Actividades</strong> para ver qué se activó.`,
-            );
-      return;
-    }
-
-    // Orden: activos primero, luego libres; alfabético dentro de cada grupo
-    const sorted = [...allMboxes].sort((a, b) => {
-      const aA = activeSet.has(a),
-        bA = activeSet.has(b);
-      if (aA && !bA) return -1;
-      if (!aA && bA) return 1;
-      return String(a).localeCompare(String(b));
-    });
-
-    document.getElementById("mbox-list").innerHTML = sorted
-      .map((mbox) => {
-        const isActive = activeSet.has(mbox);
-        const isInDom = domSet.has(mbox);
-        const actName = activeMboxes.get(mbox);
-        const onlyAlloy = isActive && !isInDom;
-
-        let pillClass, pillLabel, pillTitle;
-        if (isActive && isInDom) {
-          pillClass = "status-badge--active";
-          pillLabel = "En uso";
-          pillTitle = "Está en el DOM y Target respondió para este scope";
-        } else if (onlyAlloy) {
-          pillClass = "status-badge--alloy";
-          pillLabel = "Solo Alloy";
-          pillTitle = "Target respondió, pero no hay ningún elemento [data-mbox] con este nombre";
-        } else {
-          pillClass = "status-badge--free";
-          pillLabel = "Libre";
-          pillTitle = "Está en el DOM, pero Target no le asignó nada";
-        }
-
-        // mbox sale de [data-mbox] de la página y actName del payload: ambos se escapan.
-        return `
+  const rows = sorted
+    .map((mbox) => {
+      const isActive = activeSet.has(mbox);
+      const isInDom = domSet.has(mbox);
+      const names = [...(activeMboxes.get(mbox) || [])];
+      let pillClass, pillLabel, pillTitle;
+      if (isActive && isInDom) {
+        pillClass = "status-badge--active";
+        pillLabel = "En uso";
+        pillTitle = "Está en el DOM y Target respondió para este scope";
+      } else if (isActive) {
+        pillClass = "status-badge--alloy";
+        pillLabel = "Solo Alloy";
+        pillTitle = "Target respondió, pero no hay ningún elemento [data-mbox] con este nombre";
+      } else {
+        pillClass = "status-badge--free";
+        pillLabel = "Libre";
+        pillTitle = "Está en el DOM, pero Target no le asignó nada";
+      }
+      // mbox sale de [data-mbox] de la página y los nombres del payload: se escapan.
+      return `
         <div class="mbox-row">
           <div class="mbox-row__info">
             <div class="mbox-row__name">${escapeHtml(mbox)}</div>
-            ${actName ? `<div class="mbox-row__activity">↳ ${escapeHtml(actName)}</div>` : ""}
+            ${names.map((n) => `<div class="mbox-row__activity"><span aria-hidden="true">↳</span> ${escapeHtml(n)}</div>`).join("")}
           </div>
           <div class="mbox-row__status">
             <span class="status-badge ${pillClass}" title="${pillTitle}">${pillLabel}</span>
           </div>
-        </div>
-      `;
-      })
-      .join("");
-  });
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <details class="mbox-section"${mboxSectionOpen ? " open" : ""}>
+      <summary class="mbox-section__summary">
+        ${iconSvg("chevron", "mbox-section__chevron")}
+        <span class="mbox-section__title">mBoxes</span>
+        <span>${summary}</span>
+      </summary>
+      ${rows}
+    </details>`;
 }
 
 /**
@@ -1362,13 +1442,65 @@ const openRuleCode = new Set();
 // llenado diferido de los <pre> (ver abajo).
 let lastRenderedRules = new Map();
 
-/** Condición o acción a la que apunta una clave "<rule.key>|c|<i>" / "<rule.key>|a|<i>". */
-function ruleCodeItem(key) {
+/** "<rule.key>|c|<i>" → { ruleKey, type: "c"|"a", index }. */
+function parseCodeKey(key) {
   const iSep = key.lastIndexOf("|");
   const tSep = key.lastIndexOf("|", iSep - 1);
-  const rule = lastRenderedRules.get(key.slice(0, tSep));
-  const list = key.slice(tSep + 1, iSep) === "a" ? rule?.actions : rule?.conditions;
-  return list?.[Number(key.slice(iSep + 1))] || null;
+  return { ruleKey: key.slice(0, tSep), type: key.slice(tSep + 1, iSep), index: Number(key.slice(iSep + 1)) };
+}
+
+/** Condición o acción (sus metadatos) a la que apunta una clave "<rule.key>|c|<i>" / "<rule.key>|a|<i>". */
+function ruleCodeItem(key) {
+  const { ruleKey, type, index } = parseCodeKey(key);
+  const rule = lastRenderedRules.get(ruleKey);
+  const list = type === "a" ? rule?.actions : rule?.conditions;
+  return list?.[index] || null;
+}
+
+// El código de cada regla vive en su propia clave de storage
+// ("launchCode:<rule.key>" → { c: [...], a: [...] }), fuera de launchRules —
+// ver content.js. Se trae recién al abrir un bloque (o al buscar) y se cachea;
+// storage.onChanged mantiene el cache al día con el newValue que ya trae.
+const LAUNCH_CODE_PREFIX = "launchCode:";
+const launchCodeCache = new Map();
+
+function cachedCode(key) {
+  const { ruleKey, type, index } = parseCodeKey(key);
+  const stored = launchCodeCache.get(LAUNCH_CODE_PREFIX + ruleKey);
+  const fromStore = stored?.[type]?.[index];
+  // Entradas de antes de separar el código lo traían adentro (item.code).
+  return typeof fromStore === "string" ? fromStore : ruleCodeItem(key)?.code;
+}
+
+/** Código de una condición/acción, del cache o de storage. */
+function loadCode(key, cb) {
+  const cached = cachedCode(key);
+  if (typeof cached === "string") return cb(cached);
+  const storageKey = LAUNCH_CODE_PREFIX + parseCodeKey(key).ruleKey;
+  chrome.storage.local.get(storageKey, (d) => {
+    if (d[storageKey]) launchCodeCache.set(storageKey, d[storageKey]);
+    cb(cachedCode(key) || "");
+  });
+}
+
+/** Trae TODO el código de las reglas (solo con una búsqueda activa: el buscador también mira el código). */
+function loadAllLaunchCode(cb) {
+  chrome.storage.local.get("launchCodeKeys", (d) => {
+    const keys = (d.launchCodeKeys || []).filter((k) => !launchCodeCache.has(k));
+    if (keys.length === 0) return cb();
+    chrome.storage.local.get(keys, (codes) => {
+      Object.entries(codes).forEach(([k, v]) => launchCodeCache.set(k, v));
+      cb();
+    });
+  });
+}
+
+/** Después de repintar, llena los bloques que quedaron abiertos. */
+function fillOpenCodeBlocks(list) {
+  list.querySelectorAll(".rule-row__code[open]").forEach((det) => {
+    const pre = det.querySelector(".raw-pre");
+    if (pre && !pre.textContent) loadCode(det.dataset.key, (code) => (pre.textContent = code));
+  });
 }
 
 /**
@@ -1378,15 +1510,16 @@ function ruleCodeItem(key) {
  * todas en cada tanda de reglas hacía pesado el re-render.
  */
 function codeBlockHtml(item, key) {
-  if (!item.code) return "";
+  const length = Number.isFinite(item.codeLength) ? item.codeLength : (item.code || "").length;
+  if (!length) return "";
   const isCode = item.kind === "customCode";
   const lang = item.language && item.language !== "javascript" ? ` (${item.language.toUpperCase()})` : "";
   const open = openRuleCode.has(key);
   return `
     <details class="rule-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
       <summary class="raw-summary">${isCode ? "Ver código" : "Ver configuración"}${escapeHtml(lang)}</summary>
-      <pre class="raw-pre">${open ? escapeHtml(item.code) : ""}</pre>
-      ${item.codeTruncated ? `<div class="activity__content-note">Recortado a ${item.code.length} caracteres: el código completo está en la librería de Launch de la página.</div>` : ""}
+      <pre class="raw-pre"></pre>
+      ${item.codeTruncated ? `<div class="activity__content-note">Recortado a ${length} caracteres: el código completo está en la librería de Launch de la página.</div>` : ""}
       <button class="btn-copy-content" data-copy-code="${escapeHtml(key)}">${isCode ? "Copiar código" : "Copiar configuración"}</button>
     </details>`;
 }
@@ -1396,7 +1529,7 @@ function renderConditionHtml(rule, c, i) {
   return `<div class="rule-row__cond">${formatCondition(c)}</div>${codeBlockHtml(c, `${rule.key}|c|${i}`)}`;
 }
 
-/** Línea de una acción de una regla completada + su código, configuración o URL externa. */
+/** Línea de una acción (ejecutada, o que habría ejecutado una regla fallida) + su código, configuración o URL externa. */
 function renderActionHtml(rule, a, i) {
   const head = [a.extension, a.kind].filter(Boolean).join(" · ") || "acción";
   // externalUrl ya viene validada como http(s) desde content.js; se escapa igual.
@@ -1409,7 +1542,9 @@ function renderActionHtml(rule, a, i) {
 function ruleMatchesSearch(rule, query) {
   const q = query.toLowerCase();
   const items = [...(rule.conditions || []), ...(rule.actions || [])];
-  const text = [rule.ruleName, rule.ruleId, ...items.flatMap((c) => [c.kind, c.detail, c.code, c.externalUrl])]
+  const stored = launchCodeCache.get(LAUNCH_CODE_PREFIX + rule.key) || {};
+  const codes = [...(stored.c || []), ...(stored.a || []), ...items.map((c) => c.code)];
+  const text = [rule.ruleName, rule.ruleId, ...items.flatMap((c) => [c.kind, c.detail, c.externalUrl]), ...codes]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -1485,48 +1620,63 @@ function renderLaunch() {
       })
       .join("");
 
-    const byChip = rules.filter((r) => launchFilterState[r.status]);
-    const visible = launchSearch ? byChip.filter((r) => ruleMatchesSearch(r, launchSearch)) : byChip;
-
-    if (visible.length === 0) {
-      list.innerHTML =
-        byChip.length === 0
-          ? emptyStateHtml("filter", "Todas las reglas están filtradas.<br>Activa algún filtro arriba para verlas.")
-          : emptyStateHtml("filter", `Ninguna regla coincide con <strong>${escapeHtml(launchSearch)}</strong>.`);
-      return;
-    }
-
-    // Orden de la página: la primera vez que se disparó cada regla.
-    const sorted = [...visible].sort((a, b) => (a.firstT ?? Infinity) - (b.firstT ?? Infinity));
-    lastRenderedRules = new Map(sorted.map((r) => [r.key, r]));
-    const scrollTop = list.scrollTop;
-    list.innerHTML = sorted
-      .map((r) => {
-        const s = RULE_STATUS[r.status];
-        const name = r.ruleName || r.ruleId || "Regla sin nombre";
-        // Fallidas: la condición que no se cumplió. Completadas: lo que ejecutaron.
-        const conditions = r.status === "failed" ? r.conditions || [] : [];
-        const actions = r.status === "completed" ? r.actions || [] : [];
-        const when = r.count > 1 && r.lastT > r.firstT
-          ? `${formatSinceLoad(r.firstT)} → ${formatSinceLoad(r.lastT)}`
-          : formatSinceLoad(r.firstT);
-        // Nombre de regla, ID y condiciones salen de la librería de Launch de la página: se escapan.
-        return `
-        <div class="rule-row">
-          <div class="rule-row__header">
-            <span class="status-badge ${s.badge}" title="${escapeHtml(s.title)}">${s.label}</span>
-            ${r.count > 1 ? `<span class="rule-row__count" title="Veces que se disparó">×${r.count}</span>` : ""}
-            ${when ? `<span class="event-row__time" title="Desde la carga de la página">${when}</span>` : ""}
-          </div>
-          <div class="rule-row__name" title="${escapeHtml(name)}${r.ruleId ? " · " + escapeHtml(r.ruleId) : ""}">${escapeHtml(name)}</div>
-          ${conditions.map((c, i) => renderConditionHtml(r, c, i)).join("")}
-          ${actions.map((a, i) => renderActionHtml(r, a, i)).join("")}
-        </div>
-      `;
-      })
-      .join("");
-    list.scrollTop = scrollTop;
+    // Con búsqueda activa primero se trae el código (el buscador también lo mira).
+    if (launchSearch) loadAllLaunchCode(() => paintLaunchRules(rules));
+    else paintLaunchRules(rules);
   });
+}
+
+/** Pinta la lista de reglas (chips + búsqueda ya resueltos arriba). */
+function paintLaunchRules(rules) {
+  const list = document.getElementById("launch-list");
+  const byChip = rules.filter((r) => launchFilterState[r.status]);
+  const visible = launchSearch ? byChip.filter((r) => ruleMatchesSearch(r, launchSearch)) : byChip;
+
+  if (visible.length === 0) {
+    list.innerHTML =
+      byChip.length === 0
+        ? emptyStateHtml("filter", "Todas las reglas están filtradas.<br>Activa algún filtro arriba para verlas.")
+        : emptyStateHtml("filter", `Ninguna regla coincide con <strong>${escapeHtml(launchSearch)}</strong>.`);
+    return;
+  }
+
+  // Orden de la página: la primera vez que se disparó cada regla.
+  const sorted = [...visible].sort((a, b) => (a.firstT ?? Infinity) - (b.firstT ?? Infinity));
+  lastRenderedRules = new Map(sorted.map((r) => [r.key, r]));
+  const scrollTop = list.scrollTop;
+  list.innerHTML = sorted
+    .map((r) => {
+      const s = RULE_STATUS[r.status];
+      const name = r.ruleName || r.ruleId || "Regla sin nombre";
+      // Fallidas: la condición que no se cumplió + lo que habrían ejecutado.
+      // Completadas: lo que ejecutaron.
+      const conditions = r.status === "failed" ? r.conditions || [] : [];
+      const actions = r.actions || [];
+      const actionsLabel =
+        r.status === "failed" && actions.length
+          ? `<div class="rule-row__section" title="La condición no se cumplió, así que estas acciones no corrieron en esta página">Acciones (no se ejecutaron)</div>`
+          : "";
+      const when = r.count > 1 && r.lastT > r.firstT
+        ? `${formatSinceLoad(r.firstT)} → ${formatSinceLoad(r.lastT)}`
+        : formatSinceLoad(r.firstT);
+      // Nombre de regla, ID y condiciones salen de la librería de Launch de la página: se escapan.
+      return `
+      <div class="rule-row">
+        <div class="rule-row__header">
+          <span class="status-badge ${s.badge}" title="${escapeHtml(s.title)}">${s.label}</span>
+          ${r.count > 1 ? `<span class="rule-row__count" title="Veces que se disparó">×${r.count}</span>` : ""}
+          ${when ? `<span class="event-row__time" title="Desde la carga de la página">${when}</span>` : ""}
+        </div>
+        <div class="rule-row__name" title="${escapeHtml(name)}${r.ruleId ? " · " + escapeHtml(r.ruleId) : ""}">${escapeHtml(name)}</div>
+        ${conditions.map((c, i) => renderConditionHtml(r, c, i)).join("")}
+        ${actionsLabel}
+        ${actions.map((a, i) => renderActionHtml(r, a, i)).join("")}
+      </div>
+    `;
+    })
+    .join("");
+  list.scrollTop = scrollTop;
+  fillOpenCodeBlocks(list);
 }
 
 document.getElementById("launch-filters").addEventListener("click", (e) => {
@@ -1542,8 +1692,10 @@ document.getElementById("launch-list").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-copy-code]");
   if (!btn) return;
   const item = ruleCodeItem(btn.dataset.copyCode);
-  if (!item?.code) return;
-  copyText(item.code, item.kind === "customCode" ? "Código copiado." : "Configuración copiada.");
+  loadCode(btn.dataset.copyCode, (code) => {
+    if (!code) return;
+    copyText(code, item?.kind === "customCode" ? "Código copiado." : "Configuración copiada.");
+  });
 });
 
 // "toggle" no burbujea — captura, igual que en Actividades y Eventos. Al
@@ -1556,7 +1708,7 @@ document.getElementById("launch-list").addEventListener(
     if (e.target.open) {
       openRuleCode.add(key);
       const pre = e.target.querySelector(".raw-pre");
-      if (pre && !pre.textContent) pre.textContent = ruleCodeItem(key)?.code || "";
+      if (pre && !pre.textContent) loadCode(key, (code) => (pre.textContent = code));
     } else {
       openRuleCode.delete(key);
     }
@@ -1573,19 +1725,244 @@ document.getElementById("launch-search").addEventListener("input", (e) => {
   }, 150);
 });
 
+// ── Pestaña Hits: llamadas de Alloy al Edge ──────────────────────────────────
+// Una fila por llamada (onBeforeNetworkRequest en inject.js), en el orden en
+// que salieron, con su respuesta enlazada por requestId (onNetworkResponse
+// completa status/handleTypes en el hit; el body de la respuesta se toma de
+// `requests`, que ya lo guarda — no se duplica). content.js ya calculó el
+// resumen (eventTypes, scopes, actividades cuyo display se notifica).
+const HIT_TITLES = {
+  "identity/acquire": "Pedido de identidad (ECID)",
+  "privacy/set-consent": "Consentimiento",
+};
+// Desplegables Request/Response abiertos, por "<requestId>|req" / "|res".
+const openHitBlocks = new Set();
+let lastRenderedHits = new Map();
+let lastHitResponses = new Map();
+
+function hitStatusBadge(h) {
+  if (h.error) return `<span class="status-badge status-badge--hit-error" title="${escapeHtml(h.error)}">Falló</span>`;
+  if (!h.responded) return `<span class="status-badge status-badge--hit-pending" title="Alloy la envió y todavía no llegó respuesta">Sin respuesta</span>`;
+  const ok = !Number.isFinite(h.status) || (h.status >= 200 && h.status < 300);
+  const label = Number.isFinite(h.status) ? String(h.status) : "OK";
+  return `<span class="status-badge status-badge--hit-${ok ? "ok" : "error"}" title="Código de estado de la respuesta del Edge">${label}</span>`;
+}
+
+function hitJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (e) {
+    return String(value);
+  }
+}
+
+/** Desplegable de Request o Response de un hit; el <pre> se llena al abrir, como en Launch. */
+function hitBlockHtml(h, which, value) {
+  if (value === undefined || value === null) return "";
+  const key = `${h.requestId}|${which}`;
+  const open = openHitBlocks.has(key);
+  const label = which === "req" ? "Request" : "Response";
+  return `
+    <details class="hit-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
+      <summary class="raw-summary">${label}</summary>
+      <pre class="raw-pre">${open ? escapeHtml(hitJson(value)) : ""}</pre>
+      <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">Copiar ${label.toLowerCase()}</button>
+    </details>`;
+}
+
+function hitBlockValue(key) {
+  const sep = key.lastIndexOf("|");
+  const id = key.slice(0, sep);
+  return key.slice(sep + 1) === "req" ? lastRenderedHits.get(id)?.body : lastHitResponses.get(id);
+}
+
+function renderHits() {
+  chrome.storage.local.get(["hits", "requests"], (data) => {
+    if (showBlockedIn("hits-list")) return;
+    const hits = data.hits || [];
+    const list = document.getElementById("hits-list");
+    const summary = document.getElementById("hits-summary");
+
+    if (hits.length === 0) {
+      summary.hidden = true;
+      list.innerHTML = emptyStateHtml(
+        "signal",
+        "Sin llamadas al Edge en esta carga.<br>Recarga la página con la extensión activa: Alloy hace sus llamadas al cargar.",
+        true,
+      );
+      return;
+    }
+
+    lastRenderedHits = new Map(hits.map((h) => [h.requestId, h]));
+    lastHitResponses = new Map((data.requests || []).filter((r) => r.requestId).map((r) => [r.requestId, r.payload]));
+    // ID de actividad → nombre, de las decisiones que ya están en requests:
+    // "Notifica el display de #349874" obligaba a recordar qué era cada ID.
+    const activityNames = new Map();
+    (data.requests || []).forEach((r) =>
+      (r.payload?.handle || [])
+        .filter((x) => x.type === "personalization:decisions")
+        .flatMap((x) => x.payload || [])
+        .forEach((d) => {
+          const id = d.scopeDetails?.activity?.id;
+          const name = d.items?.[0]?.meta?.["activity.name"] || d.scopeDetails?.activity?.name;
+          if (id !== undefined && name && !activityNames.has(String(id))) activityNames.set(String(id), name);
+        }),
+    );
+
+    const failed = hits.filter((h) => h.error || (Number.isFinite(h.status) && (h.status < 200 || h.status >= 300))).length;
+    const pending = hits.filter((h) => !h.responded && !h.error).length;
+    const displays = hits.filter((h) => (h.displayedActivities || []).length > 0).length;
+    summary.hidden = false;
+    summary.innerHTML = [
+      `<b>${hits.length}</b> ${hits.length === 1 ? "llamada" : "llamadas"} al Edge`,
+      `<b>${failed}</b> con error`,
+      pending ? `<b>${pending}</b> sin respuesta` : null,
+      `<span title="Llamadas decisioning.propositionDisplay: así Target cuenta la impresión">${displays} ${displays === 1 ? "notificación" : "notificaciones"} de display</span>`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const multiInstance = new Set(hits.map((h) => h.instance)).size > 1;
+    const scrollTop = list.scrollTop;
+    // Todo lo que sale del hit (endpoint, eventTypes, scopes, IDs, instancia) viene de la página: se escapa.
+    list.innerHTML = hits
+      .map((h) => {
+        const title = (h.eventTypes || []).length
+          ? h.eventTypes.join(", ")
+          : HIT_TITLES[h.endpoint] || h.endpoint || "Llamada";
+        const meta = [];
+        if ((h.scopes || []).length) meta.push(`scopes <b>${h.scopes.map(escapeHtml).join(", ")}</b>`);
+        if (h.responded) {
+          // Tipos de handle repetidos se agrupan: "state:store ×2" en vez de repetirlo.
+          const typeCounts = new Map();
+          (h.handleTypes || [])
+            .filter((t) => t !== "personalization:decisions")
+            .forEach((t) => typeCounts.set(t, (typeCounts.get(t) || 0) + 1));
+          const resp = [
+            h.decisions ? `${h.decisions} ${h.decisions === 1 ? "decisión" : "decisiones"}` : null,
+            ...[...typeCounts].map(([t, n]) => (n > 1 ? `${t} ×${n}` : t)),
+          ].filter(Boolean);
+          if (resp.length) meta.push(`respuesta: ${resp.map(escapeHtml).join(" · ")}`);
+        }
+        const displayed = (h.displayedActivities || []).length
+          ? `<div class="hit-row__meta hit-row__display">Notifica el display de:</div>
+             <ul class="hit-row__displayed">${h.displayedActivities
+               .map((id) => {
+                 const name = activityNames.get(String(id));
+                 return `<li><span class="hit-row__display-id">#${escapeHtml(id)}</span>${name ? ` <span title="${escapeHtml(name)}">${escapeHtml(name)}</span>` : ""}</li>`;
+               })
+               .join("")}</ul>`
+          : "";
+        return `
+        <div class="hit-row">
+          <div class="hit-row__header">
+            <span class="event-tag" title="${escapeHtml(h.url || "")}">${escapeHtml(h.endpoint || "?")}</span>
+            ${hitStatusBadge(h)}
+            ${multiInstance && h.instance ? `<span class="rule-row__count" title="Instancia de Alloy">${escapeHtml(h.instance)}</span>` : ""}
+            ${Number.isFinite(h.t) ? `<span class="event-row__time" title="Desde la carga de la página">${formatSinceLoad(h.t)}</span>` : ""}
+          </div>
+          <div class="hit-row__title">${escapeHtml(title)}</div>
+          ${meta.map((m) => `<div class="hit-row__meta">${m}</div>`).join("")}
+          ${displayed}
+          ${h.error ? `<div class="hit-row__meta">Error: ${escapeHtml(h.error)}</div>` : ""}
+          ${hitBlockHtml(h, "req", h.body)}
+          ${hitBlockHtml(h, "res", lastHitResponses.get(h.requestId))}
+        </div>
+      `;
+      })
+      .join("");
+    list.scrollTop = scrollTop;
+  });
+}
+
+document.getElementById("hits-list").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-copy-hit]");
+  if (!btn) return;
+  const value = hitBlockValue(btn.dataset.copyHit);
+  if (value === undefined || value === null) return;
+  copyText(hitJson(value), btn.dataset.copyHit.endsWith("|req") ? "Request copiado." : "Response copiada.");
+});
+
+document.getElementById("hits-list").addEventListener(
+  "toggle",
+  (e) => {
+    if (!e.target.classList?.contains("hit-row__code")) return;
+    const key = e.target.dataset.key;
+    if (e.target.open) {
+      openHitBlocks.add(key);
+      const pre = e.target.querySelector(".raw-pre");
+      if (pre && !pre.textContent) pre.textContent = hitJson(hitBlockValue(key));
+    } else {
+      openHitBlocks.delete(key);
+    }
+  },
+  true,
+);
+
+// Atajos entre pestañas: los diagnósticos y avisos nombran la pestaña donde
+// está el detalle ("Abre Hits") — un botón la activa, en vez de pedirle al
+// usuario que la busque.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-goto]");
+  if (!btn) return;
+  const tab = tabItems.find((t) => t.dataset.tab === btn.dataset.goto);
+  if (!tab) return;
+  activateTab(tab);
+  tab.focus();
+});
+
+// Sección mBoxes de Actividades: recuerda si quedó abierta entre repintadas.
+document.getElementById("list").addEventListener(
+  "toggle",
+  (e) => {
+    if (e.target.classList?.contains("mbox-section")) mboxSectionOpen = e.target.open;
+  },
+  true,
+);
+
 // ── Live update: re-renderiza cuando cambia el storage ───────────────────────
+// Las pintadas en vivo se agrupan: durante la carga de una página llegan
+// ráfagas de cambios (una tanda de reglas de Launch cada 300ms, hits,
+// eventos) y repintar en cada una trababa la ventana — medido en nvidia.com
+// (313 reglas): ~1s por repintada de Launch. Como mucho una por pestaña cada
+// LIVE_RENDER_MS; la primera de una ráfaga sale enseguida (sin demora visible
+// en un cambio aislado) y la última siempre se pinta (nunca queda un estado viejo).
+const LIVE_RENDER_MS = 400;
+const liveRenderState = new Map(); // pestaña → { timer, last }
+
+function scheduleLiveRender(tab, fn) {
+  const st = liveRenderState.get(tab) || { timer: null, last: 0 };
+  liveRenderState.set(tab, st);
+  if (st.timer) return;
+  const wait = Math.max(0, st.last + LIVE_RENDER_MS - Date.now());
+  st.timer = setTimeout(() => {
+    st.timer = null;
+    st.last = Date.now();
+    fn();
+  }, wait);
+}
+
+const LIVE_TABS = {
+  actividades: {
+    keys: ["requests", "renderEvents", "launchRules", "hits", "pageSdk", "domMboxes"],
+    render: () => getInspectedTab((tab) => render(tab?.url || "")),
+  },
+  eventos: { keys: ["digitalDataEvents"], render: () => renderEventos() },
+  hits: { keys: ["hits", "requests"], render: () => renderHits() },
+  launch: { keys: ["launchRules", "launchInfo"], render: () => renderLaunch() },
+};
+
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.instanceInfo) renderInstanceInfo();
+  Object.keys(changes).forEach((k) => {
+    if (!k.startsWith(LAUNCH_CODE_PREFIX)) return;
+    if (changes[k].newValue) launchCodeCache.set(k, changes[k].newValue);
+    else launchCodeCache.delete(k);
+  });
 
   const activeTab = document.querySelector(".tabs__item--active")?.dataset?.tab;
-  if (!activeTab) return;
-  if (activeTab === "mboxes" && (changes.requests || changes.domMboxes))
-    renderMboxes();
-  if (activeTab === "eventos" && changes.digitalDataEvents) renderEventos();
-  if (activeTab === "launch" && (changes.launchRules || changes.launchInfo)) renderLaunch();
-  if (activeTab === "actividades" && (changes.requests || changes.renderEvents)) {
-    getInspectedTab((tab) => render(tab?.url || ""));
-  }
+  const live = LIVE_TABS[activeTab];
+  if (live && live.keys.some((k) => changes[k])) scheduleLiveRender(activeTab, live.render);
 });
 
 // La pestaña inspeccionada puede cerrarse con la ventana abierta: antes eso

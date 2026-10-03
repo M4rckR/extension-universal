@@ -34,8 +34,46 @@ try {
   window.__alloyMonitors.push({
     // Se ejecuta cada vez que Alloy recibe una respuesta de la red de Adobe Edge.
     // data.parsedBody contiene el payload completo con las decisiones de personalización.
+    // requestId/statusCode/instanceName enlazan la respuesta con su llamada en
+    // la pestaña Hits (onBeforeNetworkRequest, abajo).
     onNetworkResponse(data) {
-      window.postMessage({ source: 'mbox-inspector', type: 'alloyResponse', payload: data.parsedBody }, '*');
+      window.postMessage({
+        source: 'mbox-inspector',
+        type: 'alloyResponse',
+        payload: data.parsedBody,
+        requestId: data.requestId,
+        statusCode: data.statusCode,
+        instance: data.instanceName,
+      }, '*');
+    },
+    // Cada llamada que Alloy manda al Edge (interact, collect, identity,
+    // set-consent), con el body completo (XDM, decisionScopes, notificaciones
+    // de display). Se clona por JSON: es un objeto plano, y así nada de la
+    // página (getters, referencias vivas) cruza al mensaje.
+    onBeforeNetworkRequest(data) {
+      let body = null;
+      try {
+        body = JSON.parse(JSON.stringify(data.payload));
+      } catch (e) {
+        body = null;
+      }
+      window.postMessage({
+        source: 'mbox-inspector',
+        type: 'hitRequest',
+        requestId: data.requestId,
+        instance: data.instanceName,
+        url: data.url,
+        body,
+        t: window.performance ? window.performance.now() : null,
+      }, '*');
+    },
+    onNetworkError(data) {
+      window.postMessage({
+        source: 'mbox-inspector',
+        type: 'hitError',
+        requestId: data && data.requestId,
+        error: data && data.error ? String(data.error.message || data.error) : 'Error de red',
+      }, '*');
     },
     // Se ejecuta una vez por instancia de Alloy configurada (alloy('configure', {...})).
     // Da orgId, datastream/edge config y dominio de Edge — sirve para confirmar
@@ -423,7 +461,7 @@ function summarizeAction(action) {
   };
 }
 
-// Las acciones se mandan UNA vez por regla: el código no cambia entre
+// Las acciones se mandan UNA vez por regla y resultado: el código no cambia entre
 // disparos y hay acciones de ~90KB (medido en bbva.pe) — una regla de scroll
 // mandaba ese bloque en cada evento.
 const launchActionsSent = new Set();
@@ -466,9 +504,14 @@ function flushLaunchRules() {
 function queueLaunchRule(status, event) {
   try {
     const rule = (event && event.rule) || {};
-    const actionsKey = rule.id || rule.name;
+    // Por regla Y resultado: content.js guarda una entrada por cada uno, y una
+    // regla que primero falló y después se completó necesita las acciones en
+    // las dos. Las de una regla fallida no se ejecutaron, pero son lo que
+    // habría hecho — justo lo que hace falta para depurar por qué no corrió.
+    const id = rule.id || rule.name;
+    const actionsKey = id ? `${id}|${status}` : null;
     let actions;
-    if (status === 'completed' && actionsKey && !launchActionsSent.has(actionsKey) && Array.isArray(rule.actions)) {
+    if (actionsKey && !launchActionsSent.has(actionsKey) && Array.isArray(rule.actions)) {
       launchActionsSent.add(actionsKey);
       actions = rule.actions.map(summarizeAction).filter(Boolean);
     }
@@ -517,6 +560,25 @@ try {
   // window._satellite no se pudo instrumentar (p. ej. no configurable): si ya
   // existe, el monitor quedó enganchado arriba; si no, no hay reglas de Launch.
 }
+
+// ── 6. at.js (Adobe Target clásico) ──────────────────────────────────────────
+// La extensión inspecciona Web SDK (Alloy). Muchos sitios todavía usan at.js
+// (medido: allianz.com, canada.ca, pwc.com, whirlpool.com, infosys.com), y ahí
+// Actividades queda vacía sin explicación. Solo se detecta y se avisa: se
+// lee window.adobe.target, nunca se lo llama ni se lo modifica.
+let atjsSent = false;
+const atjsPoll = setInterval(() => {
+  try {
+    const t = window.adobe && window.adobe.target;
+    if (atjsSent || !t || typeof t.getOffer !== 'function') return;
+    atjsSent = true;
+    clearInterval(atjsPoll);
+    window.postMessage({ source: 'mbox-inspector', type: 'pageSdk', atjsVersion: typeof t.VERSION === 'string' ? t.VERSION : '' }, '*');
+  } catch (e) {
+    // window.adobe con getters raros: no se detecta, nada más
+  }
+}, 500);
+setTimeout(() => clearInterval(atjsPoll), 30000);
 
 // buildInfo/property/environment los completa la librería después de asignar
 // el objeto, así que se revisan hasta encontrarlos (máx. 30s, como Alloy).

@@ -10,10 +10,10 @@ Cuando Target responde a una llamada de personalización, o la página hace `pus
 
 | Pestaña | Qué muestra |
 | --- | --- |
-| **Actividades** | Lista de actividades A/B y XT que Target activó, con nombre, ID, experiencia asignada y link directo a la UI de Adobe Target (el link aparece solo si configuraste el tenant en el footer — ver abajo). Cada actividad es **expandible**: si la decisión trae una offer `dom-action`, muestra `type`/`format`/`selector`/`prehidingSelector`/tamaño, un preview truncado del `content` (HTML/JS que la offer inserta), y un botón **Copiar completo** para pegar el contenido íntegro en un editor. Un click en el `#ID` de la actividad lo copia. Cada actividad muestra además su **estado de renderizado** (de los hooks `onContentRendering` de Alloy): *Renderizada*, *Falló el render*, *Sin confirmar* (Alloy empezó a aplicarla pero no confirmó) o *Sin render automático* (la aplica la página o es una oferta JSON). Si Alloy usó prehiding, una línea arriba dice cuántos ms estuvo oculto el contenido, o avisa si sigue oculto |
-| **mBoxes** | Todos los mboxes encontrados en la página, clasificados en *En uso* (Target respondió), *Libres* (existen en el DOM pero sin actividad asignada) y *Solo Alloy* (respondidos por Target pero sin elemento DOM con `data-mbox`), con una línea de resumen arriba que suma los tres. `__view__` (el scope del VEC) queda fuera de esta clasificación a propósito — en páginas 100% VEC (sin ningún mbox nombrado) esta pestaña avisa explícitamente que no hay mboxes en vez de sugerir que falta recargar |
+| **Actividades** | Lista de actividades A/B y XT que Target activó, con nombre, ID, experiencia asignada y link directo a la UI de Adobe Target (el link aparece solo si configuraste el tenant en el footer — ver abajo). Cada actividad es **expandible**: si la decisión trae una offer `dom-action`, muestra `type`/`format`/`selector`/`prehidingSelector`/tamaño, un preview truncado del `content` (HTML/JS que la offer inserta), y un botón **Copiar completo** para pegar el contenido íntegro en un editor. Un click en el `#ID` de la actividad lo copia. Si la página usa mboxes nombrados o elementos `[data-mbox]`, al final hay una sección plegable **mBoxes** que los clasifica en *En uso* (Target respondió), *Libres* (en el DOM sin actividad) y *Solo Alloy* (respondidos sin elemento `[data-mbox]`), con todas las actividades de cada scope; en páginas 100% VEC no aparece. Si se capturaron hits, cada actividad dice si su **impresión fue notificada** a Target, y un aviso arriba cuenta las renderizadas que no la notificaron. Cada actividad muestra además su **estado de renderizado** (de los hooks `onContentRendering` de Alloy): *Renderizada*, *Falló el render*, *Sin confirmar* (Alloy empezó a aplicarla pero no confirmó) o *Sin render automático* (la aplica la página o es una oferta JSON). Si Alloy usó prehiding, una línea arriba dice cuántos ms estuvo oculto el contenido, o avisa si sigue oculto |
 | **Eventos** | Pushes crudos a `window.digitalData` y `window.adobeDataLayer` (la capa de datos de Adobe, ACDL) capturados en vivo — la capa de tracking *antes* de que Adobe Launch los procese. A diferencia de Actividades/mBoxes, **persiste a través de la navegación**: cada evento queda etiquetado con la página donde disparó, agrupados en secciones colapsables por página para poder recorrer el sitio y revisar después dónde disparó cada cosa. Dentro de cada página, eventos consecutivos del mismo tipo (p. ej. varios `trackScroll` seguidos) se colapsan en una fila `[nombre · N]` expandible; chips arriba de la lista filtran por nombre de evento en todo el recorrido, y un buscador filtra por texto (nombre, cualquier valor del payload o la página). Cada payload tiene **Copiar payload** |
-| **Launch** | La propiedad de **Adobe Launch (Tags / Data Collection)** que cargó la página: nombre, **entorno** (`production`/`staging`/`development` — fuera de production avisa que no es lo que ven los usuarios), fecha de build y versión de Turbine. Debajo, las reglas de esa carga: **Completadas** y con **Condición no cumplida**, agregadas por regla (`×N` si se disparó varias veces) y en el orden en que se dispararon. Para las que no cumplieron muestra qué condición falló, el dato que la explica (p. ej. `core · cookie politica_privacidad_personalizacion` — la regla de Target que no corre hasta aceptar cookies) y un desplegable **Ver código** (customCode) o **Ver configuración** (el resto, en JSON) con botón para copiarlo. Las completadas muestran sus **acciones** (`→ core · customCode`, `→ adobe-alloy · sendEvent`…) con el mismo desplegable; un customCode externo que Launch todavía no descargó muestra el link al archivo. Chips por resultado y buscador por nombre o condición |
+| **Hits** | Cada llamada de Alloy al **Edge** de Adobe en esta carga (`interact`, `collect`, `identity/acquire`, `privacy/set-consent`), en orden y con su respuesta enlazada por `requestId`: código de estado (o *Falló* / *Sin respuesta*), `eventType` enviado, scopes pedidos, qué trajo la respuesta (N decisiones, `identity:result`, `activation:pull`…) y, si es un `decisioning.propositionDisplay`, **qué actividades notificó** (así cuenta Target la impresión). Desplegables **Request** y **Response** con el JSON completo y botón para copiar. Sale de los hooks de Alloy, no del tráfico de red: no pide permisos nuevos |
+| **Launch** | La propiedad de **Adobe Launch (Tags / Data Collection)** que cargó la página: nombre, **entorno** (`production`/`staging`/`development` — fuera de production avisa que no es lo que ven los usuarios), fecha de build y versión de Turbine. Debajo, las reglas de esa carga: **Completadas** y con **Condición no cumplida**, agregadas por regla (`×N` si se disparó varias veces) y en el orden en que se dispararon. Para las que no cumplieron muestra qué condición falló, el dato que la explica (p. ej. `core · cookie politica_privacidad_personalizacion` — la regla de Target que no corre hasta aceptar cookies) y un desplegable **Ver código** (customCode) o **Ver configuración** (el resto, en JSON) con botón para copiarlo. Todas muestran sus **acciones** — en las no cumplidas, marcadas como *no se ejecutaron*, para ver qué habría hecho la regla (`→ core · customCode`, `→ adobe-alloy · sendEvent`…) con el mismo desplegable; un customCode externo que Launch todavía no descargó muestra el link al archivo. Chips por resultado y buscador por nombre o condición |
 
 También hay un footer con el `orgId`/`edgeConfigId` de la instancia de Alloy activa en la página, para confirmar que apunta al datastream correcto, y un campo para configurar el **tenant de Adobe Target**.
 
@@ -23,7 +23,9 @@ También hay un footer con el `orgId`/`edgeConfigId` de la instancia de Alloy ac
 
 La extensión se inyecta en **cualquier página http/https** (`*://*/*`). En páginas internas del navegador (`chrome://`, `about:`, etc.), donde Chrome no permite inyectar content scripts, la ventana muestra un aviso de página no inspeccionable.
 
-En sitios que **no** usan Adobe Target/Alloy simplemente no hay nada que capturar y las pestañas quedan vacías ("Sin datos aún").
+En sitios que **no** usan Adobe Target/Alloy simplemente no hay nada que capturar y las pestañas quedan vacías ("Sin datos aún"). En sitios con **at.js** (Adobe Target clásico, sin Web SDK) funcionan Launch y Eventos, y Actividades avisa que la página usa at.js. Cuando no hay actividades, Actividades explica el motivo si los datos lo permiten: cookie de consentimiento sin aceptar, Target respondió sin ofertas (`no-offers`), o Alloy no hizo llamadas en esta carga.
+
+Probada sin romper nada (sin errores nuevos en la página respecto de cargarla sin la extensión) en viabcp.com, interbank.pe, bbva.pe, americanexpress.com, redhat.com, lenovo.com, nvidia.com, cloudflare.com, elpais.com, pwc.com, whirlpool.com, ibm.com, infosys.com, canada.ca, allianz.com, aboutamazon.com y bankofamerica.com.
 
 ### Tenant de Adobe Target
 
@@ -52,7 +54,7 @@ Los links "Abrir en Target ↗" de la pestaña Actividades apuntan al admin de A
 1. Abre una pestaña en cualquier sitio con Adobe Target/Alloy.
 2. **Recarga la página** con la extensión activa (importante: la captura ocurre al cargar).
 3. Hacé clic en el icono de la barra de herramientas — abre una ventana independiente apuntada a esa pestaña.
-4. Navega entre las pestañas **Actividades**, **mBoxes**, **Eventos** y **Launch** (también con las flechas del teclado).
+4. Navega entre las pestañas **Actividades**, **Eventos**, **Hits** y **Launch** (también con las flechas del teclado).
 5. Usa **Limpiar** para resetear todo lo capturado (incluidos los eventos del recorrido) y volver a capturar. Durante unos segundos aparece **Deshacer** por si fue un click accidental.
 
 ### Ventana independiente
@@ -64,11 +66,11 @@ Esa ventana sigue apuntando a la pestaña que estaba activa cuando la abriste, n
 ### Tips
 
 - La ventana se actualiza en **tiempo real**: si Target o el data layer disparan más eventos después de la carga, los verás aparecer sin necesidad de reabrir nada.
-- Si navegaste a otra ruta sin recargar, verás el aviso naranja de "Página distinta a la captura" en Actividades/mBoxes. Recarga para sincronizar esas dos — **Eventos no se ve afectado**, ese sigue acumulando a través de la navegación (ver "Datos que se almacenan").
+- Si navegaste a otra ruta sin recargar, verás el aviso naranja de "Página distinta a la captura" en Actividades. Recarga para sincronizarla — **Eventos no se ve afectado**, ese sigue acumulando a través de la navegación (ver "Datos que se almacenan").
 - Si el tipo de actividad no se pudo detectar automáticamente (A/B o XT), la extensión muestra ambos botones como hipótesis para que puedas elegir.
 - En "Eventos", los chips de filtro son efímeros: se resetean cada vez que reabrís la ventana, para que un chip apagado de una sesión anterior nunca te esconda un evento nuevo sin que te des cuenta. La sección de la página más reciente del recorrido arranca expandida; las anteriores, colapsadas.
 - El preview de `content` en "Actividades" está truncado a propósito (40 líneas o 3000 caracteres, lo que ocurra primero) — para ver el contenido completo (HTML/JS grande de una offer), usá **Copiar completo** y pegalo en tu editor.
-- Si una pestaña ya estaba abierta antes de instalar/recargar la extensión, no hace falta recargarla: el estado vacío de Actividades/mBoxes/Eventos tiene un botón **Capturar ahora** que reinyecta la captura sin perder lo que tenías abierto en esa pestaña.
+- Si una pestaña ya estaba abierta antes de instalar/recargar la extensión, no hace falta recargarla: el estado vacío de Actividades/Eventos tiene un botón **Capturar ahora** que reinyecta la captura sin perder lo que tenías abierto en esa pestaña.
 
 ---
 
@@ -82,6 +84,7 @@ Página web (cualquier sitio con Alloy)
   ├─ window.__alloyMonitors  ──► inject.js  (world: MAIN, document_start)
   │    Intercepta respuestas de red de Alloy y llamadas a sendEvent de cada instancia (window.__alloyNS)
   │    Escucha el renderizado y el prehiding de Alloy (onContentRendering / onContentHiding)
+  │    y cada llamada al Edge (onBeforeNetworkRequest / onNetworkResponse / onNetworkError)
   │    Engancha un monitor en window._satellite._monitors (reglas de Launch) vía accessor,
   │      sin crear window._satellite antes de que lo cree la librería de Launch
   │    Escanea atributos [data-mbox] en el DOM (+ MutationObserver para SPAs)
@@ -97,16 +100,16 @@ Página web (cualquier sitio con Alloy)
                          │
                 chrome.storage.local
    { requests, domMboxes, digitalDataEvents, instanceInfo,
-     renderEvents, launchRules, launchInfo, tabUrl }
+     renderEvents, launchRules, launchInfo, hits, tabUrl }
    requests/domMboxes/instanceInfo/launchInfo: se resetean al navegar a otra página.
-   renderEvents/launchRules: se resetean en CADA carga (también al recargar).
+   renderEvents/launchRules/hits: se resetean en CADA carga (también al recargar).
    digitalDataEvents: NO — persiste a través de la navegación (pageUrl por evento).
                          │
                          ▼
                      popup.js  (popup.html, solo en ventana independiente)
-          render()        → pestaña Actividades (+ contenido expandible y renderizado)
-          renderMboxes()  → pestaña mBoxes
+          render()        → pestaña Actividades (+ contenido, renderizado, impresión y sección mBoxes)
           renderEventos() → pestaña Eventos (agrupada por página del recorrido)
+          renderHits()    → pestaña Hits (llamadas al Edge + respuesta)
           renderLaunch()  → pestaña Launch (propiedad + reglas)
 
 background.js (service worker)
@@ -161,7 +164,7 @@ El manifest no tiene `default_popup`, así que `chrome.action.onClicked` dispara
 | `background.js` | Service worker: `chrome.action.onClicked` crea/enfoca la ventana independiente (único entry point), reapunta la ventana si se hace click desde otra pestaña, limpieza del puntero al cerrarse la ventana |
 | `popup.html` | UI (estructura HTML + CSS con metodología BEM), montada solo dentro de la ventana independiente |
 | `assets/fonts/` | IBM Plex Sans/Mono empaquetadas (licencia OFL en `LICENSE.txt`): la ventana no hace pedidos externos |
-| `popup.js` | Lógica: renderizado de las 4 pestañas, tabs, live update |
+| `popup.js` | Lógica: renderizado de las 4 pestañas, tabs, live update (agrupado: como mucho una repintada por pestaña cada 400ms) |
 
 ---
 
@@ -184,7 +187,10 @@ Todo se guarda localmente en `chrome.storage.local` (solo en tu navegador, nunca
 | `digitalDataEvents` | Pushes crudos a `window.digitalData` / `window.adobeDataLayer` (payload + timestamp + tiempo desde carga + `pageUrl` de origen + `layer`) | 500 entradas | **Sí** — es un recorrido, no una foto (ver el porqué del límite abajo) |
 | `instanceInfo` | orgId/edgeConfigId/edgeDomain de cada instancia de Alloy de la página (lista, una por nombre de instancia) | — | No |
 | `renderEvents` | Estados de renderizado y prehiding de Alloy (estado, instancia, IDs de actividad, error, tiempo desde carga) | 200 entradas | No — se resetea en cada carga |
-| `launchRules` | Reglas de Launch agregadas por regla + resultado (nombre, ID, contador, tiempos, hasta 5 condiciones fallidas con su resumen y su código (customCode) o configuración en JSON, hasta 8000 caracteres cada una; en las completadas, hasta 10 acciones con su código, configuración o URL externa, hasta 12000 caracteres cada una) | 400 reglas distintas | No — se resetea en cada carga |
+| `launchRules` | Reglas de Launch agregadas por regla + resultado (nombre, ID, contador, tiempos, hasta 5 condiciones fallidas resumidas y hasta 10 acciones por regla — también en las no cumplidas), **sin el código** | 400 reglas distintas | No — se resetea en cada carga |
+| `launchCode:<regla>` / `launchCodeKeys` | El código (customCode) o la configuración en JSON de cada condición (hasta 8000 caracteres) y acción (hasta 12000), una clave por regla, escrita solo cuando cambia; `launchCodeKeys` es el índice para borrarlas. La ventana las lee recién al abrir un bloque o al buscar | 400 claves | No — se borran en cada carga |
+| `hits` | Llamadas de Alloy al Edge: `requestId`, instancia, URL, endpoint, body enviado (hasta 60000 caracteres), resumen (eventTypes, scopes, actividades notificadas) y estado de la respuesta. El body de la respuesta no se duplica: se toma de `requests` por `requestId` | 100 entradas | No — se resetea en cada carga |
+| `pageSdk` | Si la página usa at.js (Target clásico) y su versión: Actividades lo explica en vez de mostrarse vacía | — | No |
 | `launchInfo` | Propiedad de Launch: nombre, ID, entorno, fecha de build, versión de Turbine | — | No |
 | `inspectorWindow` | Puntero `{windowId, tabId, sourceTabId}` de la ventana independiente abierta, si hay una | — | — |
 | `tabUrl` | URL de la última página capturada (para detectar cambios de página) | — | — |
@@ -192,7 +198,7 @@ Todo se guarda localmente en `chrome.storage.local` (solo en tu navegador, nunca
 
 `digitalDataEvents` usa 500 como límite porque, a diferencia de `requests`/`domMboxes`, tiene que cubrir un recorrido completo por el sitio en vez de una sola página: medido en vivo, un push típico (`trackScroll`/`trackAction`) pesa ~60-120B de JSON crudo, y cada entrada persistida (con el wrapper + `pageUrl`) ronda ~300-500B — 500 entradas son ~250KB, una fracción chica de los 10MB de cuota de `chrome.storage.local` (la extensión no pide `unlimitedStorage`), y alcanza cómodo para 30-50 páginas de recorrido.
 
-El botón **Limpiar** vacía `requests`, `domMboxes`, `digitalDataEvents`, `renderEvents` y `launchRules` — incluido el recorrido de eventos (`instanceInfo` y `launchInfo` quedan: son la configuración de la página, no capturas): es un "empezar de nuevo" explícito, a diferencia de navegar dentro del mismo recorrido. Se puede deshacer durante unos segundos.
+El botón **Limpiar** vacía `requests`, `domMboxes`, `digitalDataEvents`, `renderEvents`, `launchRules` y `hits` — incluido el recorrido de eventos (`instanceInfo` y `launchInfo` quedan: son la configuración de la página, no capturas): es un "empezar de nuevo" explícito, a diferencia de navegar dentro del mismo recorrido. Se puede deshacer durante unos segundos.
 
 ---
 

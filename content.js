@@ -45,7 +45,55 @@ const MAX_CONDITION_CODE = 8000;
 // customCode de 40-90KB (pixels, modales) — se recortan a 12000 con aviso.
 // Peor caso real medido (bbva.pe, 71 customCode): ~200KB por carga.
 const MAX_ACTIONS_PER_RULE = 10;
+// Código de condiciones/acciones por regla, fuera de launchRules (ver el
+// handler de "launchRules"). En memoria también: content.js vive lo que vive
+// la carga de la página, igual que esas claves.
+const LAUNCH_CODE_PREFIX = "launchCode:";
+const launchCodeMem = new Map(); // key de regla → { c: [código por condición], a: [código por acción], actionsMeta }
 const MAX_ACTION_CODE = 12000;
+
+// Hits: llamadas de Alloy al Edge de una carga. Medido: 4-6 por carga de
+// home, bodies de 0.2-3.3KB. El body se guarda entero hasta 60000 caracteres
+// (un XDM con una capa de datos grande); más que eso se reemplaza por un aviso.
+const MAX_HITS = 100;
+const MAX_HIT_BODY_CHARS = 60000;
+
+/** "/ee/va6/v1/interact" → "interact", "/ee/v1/identity/acquire" → "identity/acquire". */
+function hitEndpoint(url) {
+  try {
+    const path = new URL(url).pathname;
+    const i = path.indexOf("/v1/");
+    return (i >= 0 ? path.slice(i + 4) : path.split("/").pop()) || "?";
+  } catch (e) {
+    return "?";
+  }
+}
+
+/** Resumen de un body de Alloy: eventTypes, scopes pedidos y actividades cuyo display se notifica. */
+function summarizeHitBody(body) {
+  const events = body && Array.isArray(body.events) ? body.events : [];
+  const eventTypes = [];
+  const scopes = [];
+  const displayed = [];
+  events.forEach((ev) => {
+    const xdm = (ev && ev.xdm) || {};
+    if (typeof xdm.eventType === "string") eventTypes.push(xdm.eventType);
+    const ds = ev && ev.query && ev.query.personalization && ev.query.personalization.decisionScopes;
+    if (Array.isArray(ds)) scopes.push(...ds);
+    const props = xdm._experience && xdm._experience.decisioning && xdm._experience.decisioning.propositions;
+    if (Array.isArray(props)) {
+      props.forEach((p) => {
+        const id = p && p.scopeDetails && p.scopeDetails.activity && p.scopeDetails.activity.id;
+        if (id !== undefined && id !== null) displayed.push(String(id));
+      });
+    }
+  });
+  return {
+    eventTypes: cleanNames(eventTypes),
+    scopes: cleanNames([...new Set(scopes)]),
+    displayedActivities: cleanNames([...new Set(displayed)]),
+  };
+}
 
 /** Valida una acción de Launch que viene de inject.js (forma no confiable). */
 function cleanAction(a) {
@@ -131,6 +179,11 @@ function safeStorageSet(items) {
   return chrome.storage.local.set(items);
 }
 
+function safeStorageRemove(keys) {
+  if (!isExtensionContextValid()) return Promise.resolve();
+  return chrome.storage.local.remove(keys);
+}
+
 // ── Cola de escrituras serializadas ──────────────────────────────────────────
 // Todo handler que hace lectura-modificación-escritura (get → mergear/unshift
 // → set) sobre chrome.storage.local tiene la misma carrera: si dos mensajes
@@ -187,8 +240,13 @@ function enqueueStorageTask(task) {
 // inmediato), sin la cola ese handler podría leer el estado viejo antes del
 // reset, o el reset podría pisar una escritura recién hecha.
 enqueueStorageTask(async () => {
-  const data = await safeStorageGet("tabUrl");
+  const data = await safeStorageGet(["tabUrl", "launchCodeKeys"]);
   const prevUrl = data.tabUrl || "";
+  // Código de reglas de la carga anterior (una clave por regla, ver
+  // "launchRules" abajo): se borra siempre, igual que launchRules.
+  if (Array.isArray(data.launchCodeKeys) && data.launchCodeKeys.length) {
+    await safeStorageRemove(data.launchCodeKeys);
+  }
   let prevPath = "";
   let currPath = "";
   const pageKey = (url) => {
@@ -212,15 +270,18 @@ enqueueStorageTask(async () => {
       instanceInfo: null,
       renderEvents: [],
       launchRules: [],
+      launchCodeKeys: [],
       launchInfo: null,
+      hits: [],
+      pageSdk: null,
       tabUrl: window.location.href,
     });
   } else {
     // Misma página recargada: requests/domMboxes se conservan (se deduplican
     // al mostrar), pero el renderizado y las reglas de Launch son de CADA
     // carga — sin esto, una recarga duplicaba cada regla (×2) y mezclaba el
-    // prehiding de dos cargas.
-    await safeStorageSet({ tabUrl: window.location.href, renderEvents: [], launchRules: [] });
+    // prehiding de dos cargas. Los hits también: son las llamadas de esta carga.
+    await safeStorageSet({ tabUrl: window.location.href, renderEvents: [], launchRules: [], launchCodeKeys: [], hits: [] });
   }
 });
 
@@ -249,6 +310,28 @@ function handleInjectedMessage(event) {
   // por la misma carrera que perdía eventos de digitalData.
   if (event.data.type === "alloyResponse") {
     const payload = event.data.payload;
+    const requestId = shortString(event.data.requestId);
+    const statusCode = Number.isFinite(event.data.statusCode) ? event.data.statusCode : null;
+    // El hit se completa aunque el payload no se guarde (vacío o demasiado
+    // grande): el código de estado y los tipos de handle alcanzan para Hits.
+    if (requestId) {
+      const handle = payload && Array.isArray(payload.handle) ? payload.handle : [];
+      const handleTypes = cleanNames(handle.map((h) => h && h.type));
+      const decisions = handle
+        .filter((h) => h && h.type === "personalization:decisions" && Array.isArray(h.payload))
+        .reduce((n, h) => n + h.payload.length, 0);
+      enqueueStorageTask(async () => {
+        const data = await safeStorageGet("hits");
+        const hits = data.hits || [];
+        const hit = hits.find((h) => h.requestId === requestId);
+        if (!hit) return;
+        hit.status = statusCode;
+        hit.responded = true;
+        hit.handleTypes = handleTypes;
+        hit.decisions = decisions;
+        await safeStorageSet({ hits });
+      });
+    }
     if (!payload || typeof payload !== "object") return;
     if (jsonLength(payload) > MAX_ALLOY_PAYLOAD_CHARS) return;
     enqueueStorageTask(async () => {
@@ -258,6 +341,8 @@ function handleInjectedMessage(event) {
         payload,
         url: window.location.href,
         time: new Date().toISOString(),
+        // Para mostrar esta respuesta junto a su llamada en Hits.
+        requestId,
       });
       try {
         await safeStorageSet({ requests: requests.slice(0, 50) });
@@ -368,6 +453,57 @@ function handleInjectedMessage(event) {
     });
   }
 
+  // Llamada de Alloy al Edge, antes de salir (onBeforeNetworkRequest). Se
+  // guarda en orden de llegada con un resumen ya calculado; la respuesta la
+  // completa el handler de alloyResponse (mismo requestId).
+  if (event.data.type === "hitRequest") {
+    const requestId = shortString(event.data.requestId);
+    if (!requestId) return;
+    const rawBody = event.data.body && typeof event.data.body === "object" ? event.data.body : null;
+    const size = jsonLength(rawBody);
+    const entry = {
+      requestId,
+      instance: shortString(event.data.instance),
+      url: typeof event.data.url === "string" ? event.data.url.slice(0, 600) : undefined,
+      endpoint: shortString(hitEndpoint(event.data.url)),
+      ...summarizeHitBody(rawBody),
+      body: size <= MAX_HIT_BODY_CHARS ? rawBody : { _omitido: `body de ${size} caracteres, no se guardó` },
+      t: Number.isFinite(event.data.t) ? event.data.t : null,
+      time: new Date().toISOString(),
+      status: null,
+      responded: false,
+      handleTypes: [],
+      decisions: 0,
+      error: undefined,
+    };
+    enqueueStorageTask(async () => {
+      const data = await safeStorageGet("hits");
+      const hits = (data.hits || []).concat(entry).slice(-MAX_HITS);
+      await safeStorageSet({ hits });
+    });
+  }
+
+  if (event.data.type === "hitError") {
+    const requestId = shortString(event.data.requestId);
+    if (!requestId) return;
+    const error = shortString(event.data.error) || "Error de red";
+    enqueueStorageTask(async () => {
+      const data = await safeStorageGet("hits");
+      const hits = data.hits || [];
+      const hit = hits.find((h) => h.requestId === requestId);
+      if (!hit) return;
+      hit.error = error;
+      await safeStorageSet({ hits });
+    });
+  }
+
+  // La página usa at.js (Target clásico): el popup lo explica en vez de
+  // mostrar "Sin capturas". Solo la versión, como string corto.
+  if (event.data.type === "pageSdk") {
+    const atjsVersion = typeof event.data.atjsVersion === "string" ? event.data.atjsVersion.slice(0, 20) : "";
+    enqueueStorageTask(() => safeStorageSet({ pageSdk: { atjs: true, atjsVersion } }));
+  }
+
   // Propiedad de Launch cargada en la página (nombre, entorno, build).
   if (event.data.type === "launchInfo") {
     const p = event.data.payload || {};
@@ -415,32 +551,68 @@ function handleInjectedMessage(event) {
       .filter((r) => r.ruleId || r.ruleName);
     if (incoming.length === 0) return;
     enqueueStorageTask(async () => {
-      const data = await safeStorageGet("launchRules");
+      const data = await safeStorageGet(["launchRules", "launchCodeKeys"]);
       const list = data.launchRules || [];
+      const codeKeys = new Set(data.launchCodeKeys || []);
+      const dirtyCode = new Set();
       incoming.forEach((r) => {
         const key = `${r.ruleId || r.ruleName}|${r.status}`;
         let entry = list.find((x) => x.key === key);
+        let mem = launchCodeMem.get(key);
         if (!entry) {
           if (list.length >= MAX_LAUNCH_RULES) return;
           entry = { key, status: r.status, ruleId: r.ruleId, ruleName: r.ruleName, count: 0, firstT: r.t, lastT: r.t, conditions: [] };
           list.push(entry);
+          // Entrada nueva (primera vez, o después de Limpiar): las condiciones
+          // se vuelven a reportar en cada disparo, pero las acciones no
+          // (inject.js las manda una vez) — se recuperan de memoria.
+          if (mem) {
+            mem.c = [];
+            if (mem.actionsMeta) entry.actions = mem.actionsMeta;
+          } else {
+            mem = { c: [], a: [], actionsMeta: null };
+            launchCodeMem.set(key, mem);
+          }
+          dirtyCode.add(key);
         }
         entry.count += 1;
         entry.lastT = r.t;
-        if (r.actions && !entry.actions) entry.actions = r.actions;
+        if (r.actions && !entry.actions) {
+          mem.a = r.actions.map((a) => a.code || "");
+          mem.actionsMeta = r.actions.map(({ code, ...meta }) => ({ ...meta, codeLength: (code || "").length }));
+          entry.actions = mem.actionsMeta;
+          dirtyCode.add(key);
+        }
         if (r.condition && entry.conditions.length < MAX_CONDITIONS_PER_RULE) {
           // El código cuenta: dos customCode de la misma regla tienen el mismo
           // extension/kind/detail vacío y solo se distinguen por el código.
-          const same = (c) =>
+          const code = r.condition.code || "";
+          const same = (c, i) =>
             c.extension === r.condition.extension &&
             c.kind === r.condition.kind &&
             c.detail === r.condition.detail &&
             c.negate === r.condition.negate &&
-            c.code === r.condition.code;
-          if (!entry.conditions.some(same)) entry.conditions.push(r.condition);
+            (mem.c[i] || "") === code;
+          if (!entry.conditions.some(same)) {
+            const { code: _omit, ...meta } = r.condition;
+            entry.conditions.push({ ...meta, codeLength: code.length });
+            mem.c.push(code);
+            dirtyCode.add(key);
+          }
         }
       });
-      await safeStorageSet({ launchRules: list });
+      // El código va en una clave por regla, escrita solo cuando cambia:
+      // launchRules queda liviano (nombres, contadores, metadatos) y cada tanda
+      // reescribe eso, no el código. Medido en nvidia.com: launchRules con el
+      // código adentro pesaba ~890KB y se reescribía cada 300ms durante la carga.
+      const writes = { launchRules: list };
+      dirtyCode.forEach((key) => {
+        const mem = launchCodeMem.get(key);
+        writes[LAUNCH_CODE_PREFIX + key] = { c: mem.c, a: mem.a };
+        codeKeys.add(LAUNCH_CODE_PREFIX + key);
+      });
+      if (dirtyCode.size) writes.launchCodeKeys = [...codeKeys];
+      await safeStorageSet(writes);
     });
   }
 }

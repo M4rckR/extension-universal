@@ -12,7 +12,7 @@ Textos listos para pegar en el panel de desarrollador
 | --- | --- |
 | Paquete | `dist/target-inspector-2.3.0.zip` |
 | Ícono de la tienda (128×128) | `assets/icon128.png` |
-| Capturas (1280×800) | `store/screenshots/1-actividades.jpg`, `2-eventos.jpg`, `3-mboxes.jpg` |
+| Capturas (1280×800) | `store/screenshots/1-actividades.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-eventos.jpg` |
 | Idioma | Español |
 | Categoría | Herramientas para desarrolladores |
 
@@ -34,9 +34,9 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 >
 > Abre una ventana junto a la página que estás revisando y muestra en vivo:
 >
-> • Actividades: qué actividades A/B y de segmentación (XT) respondió Adobe Target, con su experiencia asignada, si Alloy llegó a renderizarlas en la página, el tiempo de prehiding, el contenido HTML de la oferta y un enlace directo a la actividad en Adobe Target (configurando el tenant de tu organización).
-> • mBoxes: cruza los elementos [data-mbox] de la página con los scopes que Target respondió y los clasifica en en uso, libres y solo Alloy.
+> • Actividades: qué actividades A/B y de segmentación (XT) respondió Adobe Target, con su experiencia asignada, si Alloy llegó a renderizarlas en la página, el tiempo de prehiding, si se notificó la impresión, el contenido HTML de la oferta, una sección mBoxes que cruza los elementos [data-mbox] con los scopes que respondió Target y un enlace directo a la actividad en Adobe Target (configurando el tenant de tu organización).
 > • Eventos: registra los envíos a la capa de datos (window.digitalData y window.adobeDataLayer) a lo largo de todo el recorrido, agrupados por página, con búsqueda de texto y filtros por nombre de evento.
+> • Hits: cada llamada de Alloy a Adobe Edge con su respuesta: código de estado, tipo de evento, scopes pedidos, decisiones devueltas y qué actividades se notificaron como vistas, con el JSON completo del request y del response.
 > • Launch: la propiedad de Adobe Launch (Tags) que carga la página, con su entorno (production, staging o development) y fecha de compilación, y las reglas que se completaron o cuya condición no se cumplió, con el motivo (por ejemplo, la cookie de consentimiento que falta).
 >
 > También muestra el datastream y el orgId de la instancia de Alloy activa, para confirmar que la página apunta a la configuración correcta.

@@ -253,10 +253,15 @@
       }
 
       /* ── Tabs ────────────────────────────────────────────── */
+      /* overflow-x: el contenedor absorbe cualquier exceso (ventana muy
+         angosta, zoom) en vez de que la página entera scrollee de costado. */
       .tabs {
         display: flex;
+        overflow-x: auto;
+        scrollbar-width: none;
       }
       .tabs__item {
+        flex-shrink: 0;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -281,6 +286,11 @@
       }
       .tabs__item:focus-visible {
         outline-offset: -3px;
+      }
+      @media (max-width: 420px) {
+        .tabs__item {
+          padding-inline: 12px;
+        }
       }
       /* ── URL bar ─────────────────────────────────────────── */
       .url-bar {
@@ -406,9 +416,11 @@
         background: var(--scope-vec-bg);
         color: var(--scope-vec);
       }
+      /* Un scope con nombre es un identificador, no un estado: sin verde. */
       .scope-tag--mbox {
-        background: var(--ok-bg);
-        color: var(--ok);
+        background: var(--bg-sunken);
+        color: var(--neutral);
+        box-shadow: inset 0 0 0 1px var(--line-strong);
       }
       .activity__type {
         flex-shrink: 0;
@@ -463,6 +475,10 @@
         font-weight: 500;
         overflow-wrap: anywhere;
       }
+      .activity__display {
+        color: var(--ok);
+        font-family: var(--font-sans);
+      }
       .activity__separator {
         color: var(--ink-3);
       }
@@ -513,7 +529,51 @@
         color: var(--type-xt);
       }
 
-      /* ── Resumen de mboxes (pestaña mBoxes) ──────────────── */
+      /* ── Sección mBoxes (al final de Actividades) ─────────
+         Antes era una pestaña propia, vacía o de una fila en los 17 sitios
+         probados y la que empujaba "Launch" fuera de la ventana a 380px. */
+      .mbox-section {
+        border-top: 1px solid var(--line);
+      }
+      .mbox-section__summary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 16px;
+        background: var(--bg-alt);
+        font-size: var(--fs-sm);
+        color: var(--ink-2);
+        cursor: pointer;
+        list-style: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .mbox-section__summary::-webkit-details-marker {
+        display: none;
+      }
+      .mbox-section__summary:hover {
+        background: var(--bg-accent);
+      }
+      .mbox-section__summary:focus-visible {
+        outline-offset: -2px;
+      }
+      .mbox-section__summary b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .mbox-section__title {
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .mbox-section__chevron {
+        font-size: 12px;
+        color: var(--ink-3);
+        transition: transform 0.15s;
+      }
+      .mbox-section[open] .mbox-section__chevron {
+        transform: rotate(90deg);
+      }
+
+      /* ── Resumen de una lista (Hits) ─────────────────────── */
       .mbox-summary {
         padding: 8px 16px;
         border-bottom: 1px solid var(--line);
@@ -575,13 +635,14 @@
         border-radius: 20px;
         white-space: nowrap;
       }
+      /* Verde solo para el resultado bueno ("En uso"); "Libre" es neutro. */
       .status-badge--active {
-        background: var(--scope-vec-bg);
-        color: var(--scope-vec);
-      }
-      .status-badge--free {
         background: var(--ok-bg);
         color: var(--ok);
+      }
+      .status-badge--free {
+        background: var(--neutral-bg);
+        color: var(--neutral);
       }
       .status-badge--alloy {
         background: var(--neutral-bg);
@@ -600,7 +661,6 @@
         border-radius: 20px;
         white-space: nowrap;
         flex-shrink: 0;
-        margin-left: auto;
       }
       .render-badge--ok {
         background: var(--ok-bg);
@@ -688,9 +748,10 @@
         background: var(--neutral-bg);
         color: var(--neutral);
       }
+      /* production es lo normal: neutro. El color queda para lo que hay que ver. */
       .env-badge--production {
-        background: var(--ok-bg);
-        color: var(--ok);
+        background: var(--neutral-bg);
+        color: var(--neutral);
       }
       .env-badge--staging {
         background: var(--warn-bg);
@@ -758,6 +819,88 @@
       .rule-row__code {
         margin-top: 4px;
       }
+      .rule-row__section {
+        margin-top: 6px;
+        font-size: var(--fs-meta);
+        font-weight: 600;
+        color: var(--ink-2);
+      }
+      /* ── Fila de hit (pestaña Hits): una llamada de Alloy al Edge ── */
+      .hit-row {
+        padding: 9px 16px 10px;
+        border-bottom: 1px solid var(--line);
+        transition: background-color 0.1s;
+      }
+      .hit-row:nth-child(even) {
+        background: var(--bg-alt);
+      }
+      .hit-row:hover {
+        background: var(--bg-accent);
+      }
+      .hit-row:last-child {
+        border-bottom: none;
+      }
+      .hit-row__header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 3px;
+      }
+      .hit-row__header .event-row__time {
+        margin-left: auto;
+      }
+      .hit-row__title {
+        font-size: var(--fs-sm);
+        font-weight: 500;
+        color: var(--ink);
+        overflow-wrap: anywhere;
+      }
+      .hit-row__meta {
+        margin-top: 2px;
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-2);
+        overflow-wrap: anywhere;
+      }
+      .hit-row__meta b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .hit-row__display {
+        color: var(--ok);
+      }
+      .hit-row__displayed {
+        list-style: none;
+        margin-top: 2px;
+        font-size: var(--fs-sm);
+        color: var(--ink);
+      }
+      .hit-row__displayed li {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hit-row__display-id {
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        color: var(--ink-2);
+      }
+      .hit-row__code {
+        margin-top: 4px;
+      }
+      .status-badge--hit-ok {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      .status-badge--hit-error {
+        background: var(--danger-bg);
+        color: var(--danger-strong);
+      }
+      .status-badge--hit-pending {
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+
       .rule-row__link {
         color: var(--accent);
         text-decoration: none;
@@ -1089,6 +1232,20 @@
         margin: 0 auto;
         text-wrap: balance;
       }
+      /* Botón con aspecto de link dentro de un texto (atajo a otra pestaña). */
+      .inline-link {
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        font-weight: 600;
+        color: var(--accent);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .inline-link:hover {
+        color: var(--accent-strong);
+      }
       .empty-state__text strong {
         color: var(--ink);
         font-weight: 600;
@@ -1155,6 +1312,13 @@
         font-size: var(--fs-meta);
         color: var(--ink-3);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      #ts {
+        flex-shrink: 0;
       }
 
       /* ── Barra de tenant de Adobe Target ─────────────────── */
@@ -1212,7 +1376,7 @@
           </div>
           <div>
             <h1 class="header__title">Target Inspector</h1>
-            <div class="header__subtitle">Adobe Target · Alloy Monitor</div>
+            <div class="header__subtitle">Adobe Target · Web SDK · Launch</div>
           </div>
         </div>
         <div class="header__right">
@@ -1240,17 +1404,6 @@
         <button
           class="tabs__item"
           role="tab"
-          id="tab-mboxes"
-          data-tab="mboxes"
-          aria-selected="false"
-          aria-controls="panel-mboxes"
-          tabindex="-1"
-        >
-          mBoxes
-        </button>
-        <button
-          class="tabs__item"
-          role="tab"
           id="tab-eventos"
           data-tab="eventos"
           aria-selected="false"
@@ -1258,6 +1411,17 @@
           tabindex="-1"
         >
           Eventos
+        </button>
+        <button
+          class="tabs__item"
+          role="tab"
+          id="tab-hits"
+          data-tab="hits"
+          aria-selected="false"
+          aria-controls="panel-hits"
+          tabindex="-1"
+        >
+          Hits
         </button>
         <button
           class="tabs__item"
@@ -1287,11 +1451,6 @@
       <div class="list" id="list"></div>
     </section>
 
-    <section class="panel" id="panel-mboxes" role="tabpanel" aria-labelledby="tab-mboxes">
-      <p class="mbox-summary" id="mbox-summary" hidden></p>
-      <div class="list" id="mbox-list"></div>
-    </section>
-
     <section class="panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos">
       <div class="event-search" id="event-search-bar" hidden>
         <input
@@ -1311,6 +1470,11 @@
         aria-label="Filtrar por nombre de evento"
       ></div>
       <div class="list" id="event-list"></div>
+    </section>
+
+    <section class="panel" id="panel-hits" role="tabpanel" aria-labelledby="tab-hits">
+      <p class="mbox-summary" id="hits-summary" hidden></p>
+      <div class="list" id="hits-list"></div>
     </section>
 
     <section class="panel" id="panel-launch" role="tabpanel" aria-labelledby="tab-launch">
