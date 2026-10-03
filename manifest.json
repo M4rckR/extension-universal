@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Target Inspector",
+  "name": "Alloyscope: Debugger for Adobe Target, Web SDK & Launch",
+  "short_name": "Alloyscope",
   "version": "2.3.0",
   "author": "Marcos Romero",
   "description": "Inspecciona Adobe Target (actividades y su renderizado), mboxes, reglas de Adobe Launch y la capa de datos en páginas con Web SDK.",
@@ -17,7 +18,7 @@
     "128": "assets/icon128.png"
   },
   "action": {
-    "default_title": "Target Inspector",
+    "default_title": "Alloyscope",
     "default_icon": {
       "16": "assets/icon16.png",
       "32": "assets/icon32.png",

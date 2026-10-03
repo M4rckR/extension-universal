@@ -956,7 +956,7 @@ function renderInstanceInfo() {
     const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter(Boolean);
     if (list.length === 0) {
       // La versión sale del manifest: una sola fuente, sin string duplicado acá.
-      el.textContent = `v${chrome.runtime.getManifest().version} · Target Inspector`;
+      el.textContent = `v${chrome.runtime.getManifest().version} · Alloyscope`;
       el.title = "";
       return;
     }

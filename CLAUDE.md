@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Target Inspector** — a Chrome extension (Manifest V3) that intercepts Adobe Target / Alloy SDK personalization responses on **any http/https site** (`*://*/*`) and renders them in the popup: which A/B and XT activities fired (and whether Alloy actually rendered them), which mboxes are in use vs. free, the data-layer pushes, and the Adobe Launch (Tags) property and rules of the page.
+**Alloyscope** (store name "Alloyscope: Debugger for Adobe Target, Web SDK & Launch"; called "Target Inspector" until 2026-10-03 — the internal `mbox-inspector` message source and `__mboxInspector*` guards keep the old name on purpose, renaming them buys nothing and risks breaking reinjection) — a Chrome extension (Manifest V3) that intercepts Adobe Target / Alloy SDK personalization responses on **any http/https site** (`*://*/*`) and renders them in the popup: which A/B and XT activities fired (and whether Alloy actually rendered them), which mboxes are in use vs. free, the data-layer pushes, and the Adobe Launch (Tags) property and rules of the page.
 
 It works on any http/https site and the Adobe Target tenant used for the admin deep-links is user-configurable in the popup footer (`chrome.storage.local` key `tenant`). When `tenant` is empty, `getTargetUrl` returns `null` and the render hides the deep-links — the extension is otherwise fully functional.
 

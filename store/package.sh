@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 VERSION=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' manifest.json)
-OUT="dist/target-inspector-$VERSION.zip"
+OUT="dist/alloyscope-$VERSION.zip"
 
 mkdir -p dist
 rm -f "$OUT"

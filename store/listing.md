@@ -1,8 +1,8 @@
-# Ficha de Chrome Web Store — Target Inspector
+# Ficha de Chrome Web Store — Alloyscope
 
 Textos listos para pegar en el panel de desarrollador
 (https://chrome.google.com/webstore/devconsole). El paquete se arma con
-`sh store/package.sh` → `dist/target-inspector-<versión>.zip`.
+`sh store/package.sh` → `dist/alloyscope-<versión>.zip`.
 
 ---
 
@@ -10,7 +10,7 @@ Textos listos para pegar en el panel de desarrollador
 
 | Campo del panel | Qué subir |
 | --- | --- |
-| Paquete | `dist/target-inspector-2.3.0.zip` |
+| Paquete | `dist/alloyscope-2.3.0.zip` |
 | Ícono de la tienda (128×128) | `assets/icon128.png` |
 | Capturas (1280×800) | `store/screenshots/1-actividades.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-eventos.jpg` |
 | Idioma | Español |
@@ -22,7 +22,11 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 
 ## Ficha
 
-**Nombre:** Target Inspector
+**Nombre** (máx. 75 caracteres; es el `name` del manifest):
+
+> Alloyscope: Debugger for Adobe Target, Web SDK & Launch
+
+"Alloyscope" es la marca propia (lo que aparece en la barra del navegador, `short_name`); el resto son las palabras que se buscan en la tienda. "Adobe" va como referencia ("for Adobe…"), no como dueño del producto — y el descargo de no afiliación de la descripción se mantiene.
 
 **Resumen** (máx. 132 caracteres):
 
@@ -30,7 +34,7 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 
 **Descripción:**
 
-> Target Inspector es una herramienta de depuración para equipos de marketing técnico, analítica y desarrollo que trabajan con Adobe Target y Adobe Web SDK (Alloy).
+> Alloyscope es una herramienta de depuración para equipos de marketing técnico, analítica y desarrollo que trabajan con Adobe Target y Adobe Web SDK (Alloy).
 >
 > Abre una ventana junto a la página que estás revisando y muestra en vivo:
 >
@@ -45,7 +49,7 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 >
 > Desarrollada por Marcos Romero, Ingeniero en Sistemas.
 >
-> Target Inspector es un proyecto independiente y no está afiliado, patrocinado ni respaldado por Adobe. Adobe, Adobe Target y Adobe Experience Platform son marcas de Adobe Inc.
+> Alloyscope es un proyecto independiente y no está afiliado, patrocinado ni respaldado por Adobe. Adobe, Adobe Target y Adobe Experience Platform son marcas de Adobe Inc.
 
 ---
 

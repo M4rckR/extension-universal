@@ -1,4 +1,4 @@
-# Target Inspector
+# Alloyscope
 
 Extensión de Chrome (Manifest V3) que intercepta y visualiza en tiempo real las actividades de **Adobe Target / Alloy SDK** (y si Alloy llegó a renderizarlas), las **reglas de Adobe Launch (Tags)** y los eventos de **tracking (`window.digitalData` y `window.adobeDataLayer`)** activos en la página actual. Funciona en **cualquier sitio** que use Adobe Web SDK (Alloy), no en un dominio específico. La captura es puramente observacional: no altera el data layer, no escribe cookies ni recarga la página.
 

@@ -1,8 +1,8 @@
-# Política de Privacidad — Target Inspector
+# Política de Privacidad — Alloyscope
 
 Última actualización: octubre de 2026
 
-Target Inspector es una herramienta de depuración para desarrolladores que inspecciona implementaciones de Adobe Target y Adobe Web SDK (Alloy) en la página que el usuario está auditando.
+Alloyscope es una herramienta de depuración para desarrolladores que inspecciona implementaciones de Adobe Target y Adobe Web SDK (Alloy) en la página que el usuario está auditando.
 
 ## Qué datos se procesan
 
