@@ -357,6 +357,28 @@
         font-size: var(--fs-sm);
         color: var(--ink-2);
       }
+      /* Encabezado de grupo dentro de una lista (Launch: completadas / no
+         cumplidas). Queda pegado arriba mientras se recorre su grupo. */
+      .list__group {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 6px 16px;
+        background: var(--bg-sunken);
+        border-bottom: 1px solid var(--line);
+        font-size: var(--fs-meta);
+        font-weight: 600;
+        color: var(--ink-2);
+      }
+      .list__group-count {
+        font-family: var(--font-mono);
+        font-weight: 500;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+      }
       .list__note-action {
         background: none;
         border: none;
@@ -412,6 +434,13 @@
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      /* "+7 scopes": la actividad respondió en más de un scope (lista en el title). */
+      .scope-tag--more {
+        flex-shrink: 0;
+        background: transparent;
+        color: var(--ink-2);
+        box-shadow: inset 0 0 0 1px var(--line-strong);
       }
       .scope-tag--vec {
         background: var(--scope-vec-bg);
@@ -1079,6 +1108,12 @@
       .event-filter:hover {
         border-color: var(--accent);
       }
+      /* Chips "solo esto" (Hits): los inactivos no van tachados — no están
+         excluidos, simplemente no son el que se está mirando. */
+      .event-filter--solo {
+        text-decoration: none;
+        color: var(--ink-2);
+      }
       .event-filter--active {
         background: var(--bg-accent);
         color: var(--accent-strong);
@@ -1570,6 +1605,7 @@
       role="tabpanel"
       aria-labelledby="tab-actividades"
     >
+      <p class="mbox-summary" id="act-summary" hidden></p>
       <div class="list" id="list"></div>
       <div class="mbox-dock" id="mbox-dock"></div>
     </section>
@@ -1597,6 +1633,7 @@
 
     <section class="panel" id="panel-hits" role="tabpanel" aria-labelledby="tab-hits">
       <p class="mbox-summary" id="hits-summary" hidden></p>
+      <div class="event-filters" id="hits-filters" role="group" aria-label="Mostrar solo un tipo de llamada"></div>
       <div class="list" id="hits-list"></div>
     </section>
 

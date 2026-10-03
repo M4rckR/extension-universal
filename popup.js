@@ -67,7 +67,7 @@ function emptyStateHtml(icon, html, withInject = false, warn = false) {
 // en <body> con cada hit o regla nueva. Antes de repintar se anota qué
 // estaba enfocado (el data-key más cercano + el control adentro) y después
 // se vuelve a enfocar su equivalente.
-const FOCUS_ATTRS = ["id", "data-hit-toggle", "data-copy", "data-copy-event", "data-copy-code", "data-copy-hit", "data-goto", "data-idx", "data-event", "data-status", "href"];
+const FOCUS_ATTRS = ["id", "data-hit-toggle", "data-hit-filter", "data-copy", "data-copy-event", "data-copy-code", "data-copy-hit", "data-goto", "data-idx", "data-event", "data-status", "href"];
 
 function focusDescriptor(root) {
   const el = document.activeElement;
@@ -95,6 +95,13 @@ function restoreFocus(root, d) {
 function captureIsLive(data) {
   const instances = Array.isArray(data.instanceInfo) ? data.instanceInfo : data.instanceInfo ? [data.instanceInfo] : [];
   return instances.length > 0 || !!data.launchInfo || (data.requests || []).length > 0;
+}
+
+/** Franja de veredicto de Actividades (#act-summary); "" la oculta. */
+function setActSummary(html) {
+  const el = document.getElementById("act-summary");
+  el.hidden = !html;
+  el.innerHTML = html;
 }
 
 /** Estado del punto de la barra de URL: "ok" | "warn" | "error" | "idle". El texto de #page-url siempre nombra el mismo estado. */
@@ -160,7 +167,9 @@ function setBlocked(icon, html, urlText) {
   showBlockedIn("event-list");
   showBlockedIn("launch-list");
   showBlockedIn("hits-list");
+  setActSummary("");
   document.getElementById("hits-summary").hidden = true;
+  document.getElementById("hits-filters").innerHTML = "";
   document.getElementById("event-filters").innerHTML = "";
   document.getElementById("event-search-bar").hidden = true;
   document.getElementById("launch-info").hidden = true;
@@ -227,6 +236,7 @@ function showStale(tabUrl) {
     }
   })();
   document.getElementById("mbox-dock").innerHTML = "";
+  setActSummary("");
   document.getElementById("list").innerHTML = emptyStateHtml(
     "refresh",
     `Página distinta a la captura.<br>Recarga <strong>${escapeHtml(host)}</strong> para capturar.`,
@@ -587,6 +597,7 @@ function render(currentTabUrl) {
       // Con un motivo concreto no se ofrece "Capturar ahora": reinyectar no
       // arregla una cookie que falta ni una regla que no corrió.
       const reason = whyNoActivities(data);
+      setActSummary("");
       list.innerHTML = emptyStateHtml(
         reason?.warn ? "alert" : "signal",
         reason?.html ||
@@ -620,6 +631,20 @@ function render(currentTabUrl) {
     );
 
     // Muestra una sola fila por actividad (pueden llegar duplicadas en múltiples requests)
+    // Una actividad puede responder en varios scopes (bankofamerica.com: una
+    // sola en 8 mboxes). Se junta la lista entera por actividad, ordenada
+    // (__view__ primero): antes la fila mostraba el scope de la primera
+    // decisión que llegara, y cambiaba de una carga a otra.
+    const scopesByActivity = new Map();
+    allDecisions.forEach((d) => {
+      const id = d.scopeDetails?.activity?.id;
+      if (!id || !d.scope) return;
+      if (!scopesByActivity.has(id)) scopesByActivity.set(id, new Set());
+      scopesByActivity.get(id).add(d.scope);
+    });
+    const sortedScopes = (id) =>
+      [...(scopesByActivity.get(id) || [])].sort((a, b) => (a === "__view__" ? -1 : b === "__view__" ? 1 : String(a).localeCompare(String(b))));
+
     const seen = new Set();
     const unique = allDecisions.filter((d) => {
       const id = d.scopeDetails?.activity?.id;
@@ -635,6 +660,7 @@ function render(currentTabUrl) {
     // quedaba vacía con solo el aviso del tenant, sin decir nada.
     if (unique.length === 0) {
       const reason = whyNoActivities(data);
+      setActSummary("");
       list.innerHTML = emptyStateHtml(
         reason?.warn ? "alert" : "target",
         reason?.html ||
@@ -664,7 +690,9 @@ function render(currentTabUrl) {
     // controla esos strings. El recorte de nombres largos lo hace el CSS.
     const rowsHtml = unique
       .map((d, idx) => {
-        const scope = formatScope(d.scope);
+        const scopes = sortedScopes(d.scopeDetails?.activity?.id);
+        const scope = formatScope(scopes[0] ?? d.scope);
+        const moreScopes = scopes.slice(1);
         const { name, id, exp, actType } = getActivityInfo(d);
         const displayName = name || `Actividad ${id}`;
         const targetUrl = getTargetUrl(actType, id);
@@ -690,6 +718,7 @@ function render(currentTabUrl) {
         <div class="activity" data-key="act|${escapeHtml(id)}">
           <div class="activity__tags">
             <span class="scope-tag scope-tag--${scope.type}" title="${escapeHtml(scope.type === "vec" ? "Visual Experience Composer (__view__)" : scope.label)}">${escapeHtml(scope.label)}</span>
+            ${moreScopes.length ? `<span class="scope-tag scope-tag--more" title="${escapeHtml(moreScopes.map((x) => formatScope(x).label).join("\n"))}">+${moreScopes.length} ${moreScopes.length === 1 ? "scope" : "scopes"}</span>` : ""}
             ${actType ? `<span class="activity__type activity__type--${actType.toLowerCase()}" title="Tipo inferido del nombre de la actividad: el payload no lo informa">${actType === "AB" ? "A/B" : "XT"}</span>` : ""}
             ${rendered ? renderBadgeHtml(rendered) : ""}
           </div>
@@ -715,8 +744,23 @@ function render(currentTabUrl) {
       : `<div class="list__note"><span>Configura el tenant para abrir actividades en Target.</span><button class="list__note-action" id="focus-tenant">Configurar</button></div>`;
 
     const displayNote = renderedWithoutDisplay
-      ? `<div class="list__note list__note--warn"><span>${renderedWithoutDisplay} ${renderedWithoutDisplay === 1 ? "actividad renderizada no notificó" : "actividades renderizadas no notificaron"} el display en esta carga: Target cuenta la impresión recién cuando se notifica.</span><button class="list__note-action" data-goto="hits">Ver Hits</button></div>`
+      ? `<div class="list__note list__note--warn"><span>${renderedWithoutDisplay} ${renderedWithoutDisplay === 1 ? "actividad renderizada no notificó" : "actividades renderizadas no notificaron"} la impresión (display) en esta carga: Target la cuenta recién cuando se notifica.</span><button class="list__note-action" data-goto="hits" data-filter="display">Ver Hits</button></div>`
       : "";
+
+    // Veredicto de la página en una línea: lo que un QA firma. Cada tramo
+    // aparece solo si hay datos para afirmarlo (sin eventos de render o sin
+    // hits no se inventa un "0").
+    const renderedOk = unique.filter((d) => renderState.byActivity.get(String(d.scopeDetails?.activity?.id))?.status === "ok").length;
+    const notifiedCount = unique.filter((d) => displayed.has(String(d.scopeDetails?.activity?.id))).length;
+    setActSummary(
+      [
+        `<b>${unique.length}</b> ${unique.length === 1 ? "actividad" : "actividades"}`,
+        renderState.hasRendering ? `<b>${renderedOk}</b> ${renderedOk === 1 ? "renderizada" : "renderizadas"}` : null,
+        knowsDisplay ? `<b>${notifiedCount}</b> con impresión notificada` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
 
     const scrollTop = list.scrollTop;
     const focused = focusDescriptor(list);
@@ -1743,8 +1787,15 @@ function paintLaunchRules(rules) {
   lastRenderedRules = new Map(sorted.map((r) => [r.key, r]));
   const scrollTop = list.scrollTop;
   const focused = focusDescriptor(list);
+  // Encabezado al empezar cada grupo: el orden "completadas primero" no se
+  // notaba sin algo que marcara dónde terminan unas y empiezan las otras.
+  const groupCount = { completed: sorted.filter((r) => r.status === "completed").length, failed: sorted.filter((r) => r.status === "failed").length };
+  const groupHeader = (r, idx) =>
+    idx === 0 || sorted[idx - 1].status !== r.status
+      ? `<div class="list__group">${RULE_STATUS[r.status].chip} <span class="list__group-count">${groupCount[r.status]}</span></div>`
+      : "";
   list.innerHTML = sorted
-    .map((r) => {
+    .map((r, idx) => {
       const s = RULE_STATUS[r.status];
       const name = r.ruleName || r.ruleId || "Regla sin nombre";
       // Fallidas: la condición que no se cumplió + lo que habrían ejecutado.
@@ -1766,7 +1817,7 @@ function paintLaunchRules(rules) {
         ? `${formatSinceLoad(r.firstT)} → ${formatSinceLoad(r.lastT)}`
         : formatSinceLoad(r.firstT);
       // Nombre de regla, ID y condiciones salen de la librería de Launch de la página: se escapan.
-      return `
+      return `${groupHeader(r, idx)}
       <div class="rule-row" data-key="${escapeHtml(r.key)}|row">
         <div class="rule-row__header">
           <span class="status-badge ${s.badge}" title="${escapeHtml(s.title)}">${s.label}</span>
@@ -1846,6 +1897,17 @@ const HIT_TITLES = {
   "identity/acquire": "Pedido de identidad (ECID)",
   "privacy/set-consent": "Consentimiento",
 };
+// Filtro de Hits (en memoria, como los de Eventos y Launch).
+const hitIsError = (h) => !!h.error || (Number.isFinite(h.status) && (h.status < 200 || h.status >= 300));
+const HIT_FILTERS = {
+  all: { label: "Todas", test: () => true },
+  decisions: { label: "Decisiones", test: (h) => (h.scopes || []).length > 0 || (h.eventTypes || []).includes("decisioning.propositionFetch") || h.decisions > 0 },
+  display: { label: "Impresión", test: (h) => (h.displayedActivities || []).length > 0 },
+  error: { label: "Con error", test: hitIsError },
+  pending: { label: "Sin respuesta", test: (h) => !h.responded && !h.error },
+};
+let hitFilter = "all";
+
 // Desplegables Request/Response abiertos, por "<requestId>|req" / "|res".
 const openHitBlocks = new Set();
 let lastRenderedHits = new Map();
@@ -1916,6 +1978,7 @@ function renderHits() {
 
     if (hits.length === 0) {
       summary.hidden = true;
+      document.getElementById("hits-filters").innerHTML = "";
       const live = captureIsLive(data);
       list.innerHTML = emptyStateHtml(
         "signal",
@@ -1951,16 +2014,31 @@ function renderHits() {
       `<b>${hits.length}</b> ${hits.length === 1 ? "llamada" : "llamadas"} al Edge`,
       `<b>${failed}</b> con error`,
       pending ? `<b>${pending}</b> sin respuesta` : null,
-      `<span title="Llamadas decisioning.propositionDisplay: así Target cuenta la impresión">${displays} ${displays === 1 ? "notificación" : "notificaciones"} de display</span>`,
+      `<span title="Llamadas que notifican el display (decisioning.propositionDisplay): así Target cuenta la impresión">${displays} ${displays === 1 ? "notificación" : "notificaciones"} de impresión</span>`,
     ]
       .filter(Boolean)
       .join(" · ");
+
+    // Chips "solo esto" (uno activo a la vez, no de exclusión como en
+    // Eventos): con 27 hits lo que se busca es aislar los de decisiones o los
+    // de impresión. Un tipo sin hits no muestra chip; si el activo se queda
+    // sin hits, se vuelve a "Todas".
+    const counts = Object.fromEntries(Object.keys(HIT_FILTERS).map((k) => [k, hits.filter(HIT_FILTERS[k].test).length]));
+    if (!counts[hitFilter]) hitFilter = "all";
+    const filters = document.getElementById("hits-filters");
+    const filterFocus = focusDescriptor(filters);
+    filters.innerHTML = Object.keys(HIT_FILTERS)
+      .filter((k) => k === "all" || counts[k] > 0)
+      .map((k) => `<button class="event-filter event-filter--solo${hitFilter === k ? " event-filter--active" : ""}" data-hit-filter="${k}" aria-pressed="${hitFilter === k}">${HIT_FILTERS[k].label} · ${counts[k]}</button>`)
+      .join("");
+    restoreFocus(filters, filterFocus);
+    const shown = hits.filter(HIT_FILTERS[hitFilter].test);
 
     const multiInstance = new Set(hits.map((h) => h.instance)).size > 1;
     const scrollTop = list.scrollTop;
     const focused = focusDescriptor(list);
     // Todo lo que sale del hit (endpoint, eventTypes, scopes, IDs, instancia) viene de la página: se escapa.
-    list.innerHTML = hits
+    list.innerHTML = shown
       .map((h) => {
         const title = (h.eventTypes || []).length
           ? h.eventTypes.join(", ")
@@ -1980,7 +2058,7 @@ function renderHits() {
           if (resp.length) meta.push(`respuesta: ${resp.map(escapeHtml).join(" · ")}`);
         }
         const displayed = (h.displayedActivities || []).length
-          ? `<div class="hit-row__meta hit-row__display">Notifica el display de:</div>
+          ? `<div class="hit-row__meta hit-row__display">Notifica la impresión (display) de:</div>
              <ul class="hit-row__displayed">${h.displayedActivities
                .map((id) => {
                  const name = activityNames.get(String(id));
@@ -2022,6 +2100,13 @@ document.getElementById("hits-list").addEventListener("click", (e) => {
   copyText(hitJson(value), btn.dataset.copyHit.endsWith("|req") ? "Request copiado." : "Response copiada.");
 });
 
+document.getElementById("hits-filters").addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-hit-filter]");
+  if (!chip) return;
+  hitFilter = chip.dataset.hitFilter;
+  renderHits();
+});
+
 // Abrir/cerrar Request o Response: el panel se llena la primera vez que se abre.
 document.getElementById("hits-list").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-hit-toggle]");
@@ -2050,6 +2135,8 @@ document.addEventListener("click", (e) => {
   const tab = tabItems.find((t) => t.dataset.tab === btn.dataset.goto);
   if (!tab) return;
   // data-search: llega a Launch con la regla nombrada ya filtrada.
+  // data-filter: "Ver Hits" desde el aviso de impresión llega ya filtrado.
+  if (btn.dataset.goto === "hits" && HIT_FILTERS[btn.dataset.filter]) hitFilter = btn.dataset.filter;
   if (btn.dataset.goto === "launch" && btn.dataset.search) {
     launchSearch = btn.dataset.search;
     document.getElementById("launch-search").value = launchSearch;
