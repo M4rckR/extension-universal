@@ -13,7 +13,7 @@ Textos listos para pegar en el panel de desarrollador
 | Paquete | `dist/alloyscope-2.3.0.zip` |
 | Ícono de la tienda (128×128) | `assets/icon128.png` |
 | Capturas (1280×800) | `store/screenshots/1-actividades.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-eventos.jpg` |
-| Idioma | Español |
+| Idiomas | Inglés (por defecto) y español — una ficha por idioma, ver "Versión en inglés" |
 | Categoría | Herramientas para desarrolladores |
 
 Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
@@ -22,13 +22,13 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 
 ## Ficha
 
-**Nombre** (máx. 75 caracteres; es el `name` del manifest):
+**Nombre** (máx. 75 caracteres; es `extName` en `_locales/*/messages.json`, igual en los dos idiomas):
 
 > Alloyscope: Debugger for Adobe Target, Web SDK & Launch
 
 "Alloyscope" es la marca propia (lo que aparece en la barra del navegador, `short_name`); el resto son las palabras que se buscan en la tienda. "Adobe" va como referencia ("for Adobe…"), no como dueño del producto — y el descargo de no afiliación de la descripción se mantiene.
 
-**Resumen** (máx. 132 caracteres):
+**Resumen** (máx. 132 caracteres; es `extDescription` de `_locales/es`):
 
 > Inspecciona Adobe Target (actividades y su renderizado), mboxes, reglas de Adobe Launch y la capa de datos en páginas con Web SDK.
 
@@ -50,6 +50,44 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 > Desarrollada por Marcos Romero, Ingeniero en Sistemas.
 >
 > Alloyscope es un proyecto independiente y no está afiliado, patrocinado ni respaldado por Adobe. Adobe, Adobe Target y Adobe Experience Platform son marcas de Adobe Inc.
+
+### Versión en inglés
+
+La extensión declara dos idiomas (`_locales/en` y `_locales/es`, con `en` como
+idioma por defecto), así que el panel deja cargar una ficha por idioma: en
+"Store listing" se elige el idioma arriba y se pega el texto de cada uno. Quien
+tenga Chrome en español ve la ficha en español; el resto, la de inglés. El
+nombre y el resumen salen del paquete (`extName` / `extDescription` de cada
+`messages.json`); la descripción larga se pega acá, en el panel.
+
+**Summary** (max. 132 characters; `extDescription` in `_locales/en`):
+
+> Debug Adobe Target, Web SDK (Alloy) and Launch on any page: activities, render status, Edge calls, rules and data layer events.
+
+**Description:**
+
+> Alloyscope is a debugging tool for marketing technologists, analysts and developers who work with Adobe Target, Adobe Web SDK (Alloy) and Adobe Launch (Tags).
+>
+> It opens a window next to the page you are checking and shows, live:
+>
+> • Activities: which A/B and experience targeting (XT) activities Adobe Target returned, with the assigned experience, whether Alloy actually rendered each one on the page, how long content stayed hidden (prehiding), and whether the impression was reported to Target. Each activity shows the offer's HTML and a direct link to the activity in Adobe Target (once you set your organization's tenant). An mBoxes strip matches the page's [data-mbox] elements against the scopes Target answered.
+> • Hits: every call Alloy makes to the Adobe Edge Network with its response: status code, event type, requested scopes, decisions returned and which activities were reported as displayed, with the full request and response JSON.
+> • Launch: the Adobe Launch (Tags) property loaded on the page, its environment (production, staging or development) and build date, and the rules that ran or did not meet a condition, with the reason (for example, a missing consent cookie) and the code of each condition and action.
+> • Events: every push to the data layer (window.digitalData and window.adobeDataLayer) across your whole visit, grouped by page, with text search and filters by event name.
+>
+> When no activities show up, Alloyscope tells you why whenever the data allows: a consent cookie blocking the Target rule, a page that uses at.js instead of Web SDK, Target answering with no offers, or Alloy not making any call.
+>
+> It also shows the datastream and orgId of each Alloy instance on the page, so you can confirm the page points to the right configuration.
+>
+> Works on any site that uses Adobe Web SDK. On sites that use at.js (classic Adobe Target), the Launch and Events tabs work and Activities explains that the page uses at.js.
+>
+> Privacy: everything captured stays in your browser (chrome.storage.local). The extension sends no data to any server, uses no analytics and loads no external resources. It is read-only: it does not modify pages, write cookies or reload anything.
+>
+> The interface is in Spanish.
+>
+> Built by Marcos Romero, Systems Engineer.
+>
+> Alloyscope is an independent project and is not affiliated with, sponsored by or endorsed by Adobe. Adobe, Adobe Target and Adobe Experience Platform are trademarks of Adobe Inc.
 
 ---
 

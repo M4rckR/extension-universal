@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "Alloyscope: Debugger for Adobe Target, Web SDK & Launch",
+    "description": "Extension name shown in the Chrome Web Store and chrome://extensions (max. 75 characters)."
+  },
+  "extShortName": {
+    "message": "Alloyscope",
+    "description": "Short name used where space is limited."
+  },
+  "extDescription": {
+    "message": "Debug Adobe Target, Web SDK (Alloy) and Launch on any page: activities, render status, Edge calls, rules and data layer events.",
+    "description": "Store summary (max. 132 characters)."
+  },
+  "actionTitle": {
+    "message": "Alloyscope",
+    "description": "Tooltip of the toolbar icon."
+  }
+}

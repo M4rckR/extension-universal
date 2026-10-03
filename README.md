@@ -159,6 +159,7 @@ El manifest no tiene `default_popup`, así que `chrome.action.onClicked` dispara
 | Archivo | Rol |
 | --- | --- |
 | `manifest.json` | Configuración de la extensión (permisos, scripts, dominios, background) |
+| `_locales/en`, `_locales/es` | Nombre y resumen de la extensión por idioma (ficha de la tienda y `chrome://extensions`); la interfaz de la ventana está solo en español |
 | `inject.js` | Captura respuestas y renderizado de Alloy, intercepta `sendEvent` de cada instancia de Alloy, `push()` en `window.digitalData` / `window.adobeDataLayer` y las reglas de Launch (`_satellite._monitors`) |
 | `content.js` | Puente postMessage → chrome.storage; valida forma y tamaño de cada mensaje (cualquier script de la página puede postear el mismo formato) |
 | `background.js` | Service worker: `chrome.action.onClicked` crea/enfoca la ventana independiente (único entry point), reapunta la ventana si se hace click desde otra pestaña, limpieza del puntero al cerrarse la ventana |
