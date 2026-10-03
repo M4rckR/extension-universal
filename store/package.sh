@@ -11,7 +11,7 @@ OUT="dist/alloyscope-$VERSION.zip"
 mkdir -p dist
 rm -f "$OUT"
 zip -q -X -r "$OUT" \
-  manifest.json background.js content.js inject.js popup.html popup.js \
+  manifest.json background.js content.js inject.js popup.html popup.js i18n.js \
   _locales \
   assets/icon16.png assets/icon32.png assets/icon48.png assets/icon128.png \
   assets/icon48.svg \

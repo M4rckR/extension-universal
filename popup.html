@@ -1537,17 +1537,19 @@
           </div>
         </div>
         <div class="header__right">
-          <span class="header__count" id="count" title="Actividades capturadas en esta página">0 ACT</span>
+          <span class="header__count" id="count" title="Actividades capturadas en esta página" data-i18n-title="countTitle">0 ACT</span>
           <button
             class="btn-clear"
             id="clear"
             title="Borra actividades, mboxes, eventos y reglas de Launch capturados. Se puede deshacer unos segundos."
+            data-i18n="clear"
+            data-i18n-title="clearTitle"
           >
             Limpiar
           </button>
         </div>
       </div>
-      <div class="tabs" role="tablist" aria-label="Secciones del inspector">
+      <div class="tabs" role="tablist" aria-label="Secciones del inspector" data-i18n-aria-label="tablistLabel">
         <button
           class="tabs__item tabs__item--active"
           role="tab"
@@ -1555,6 +1557,7 @@
           data-tab="actividades"
           aria-selected="true"
           aria-controls="panel-actividades"
+          data-i18n="tabActivities"
         >
           Actividades
         </button>
@@ -1566,6 +1569,7 @@
           aria-selected="false"
           aria-controls="panel-eventos"
           tabindex="-1"
+          data-i18n="tabEvents"
         >
           Eventos
         </button>
@@ -1596,7 +1600,7 @@
 
     <div class="url-bar">
       <div class="url-bar__indicator" aria-hidden="true"></div>
-      <div class="url-bar__text" id="page-url">Sin página activa</div>
+      <div class="url-bar__text" id="page-url" data-i18n="noPage">Sin página activa</div>
     </div>
 
     <section
@@ -1618,6 +1622,8 @@
           type="search"
           placeholder="Buscar en eventos: nombre, valor del payload o página…"
           aria-label="Buscar en eventos"
+          data-i18n-placeholder="eventSearchPlaceholder"
+          data-i18n-aria-label="eventSearchLabel"
           autocomplete="off"
           spellcheck="false"
         />
@@ -1627,13 +1633,14 @@
         id="event-filters"
         role="group"
         aria-label="Filtrar por nombre de evento"
+        data-i18n-aria-label="eventFiltersLabel"
       ></div>
       <div class="list" id="event-list"></div>
     </section>
 
     <section class="panel" id="panel-hits" role="tabpanel" aria-labelledby="tab-hits">
       <p class="mbox-summary" id="hits-summary" hidden></p>
-      <div class="event-filters" id="hits-filters" role="group" aria-label="Mostrar solo un tipo de llamada"></div>
+      <div class="event-filters" id="hits-filters" role="group" aria-label="Mostrar solo un tipo de llamada" data-i18n-aria-label="hitFiltersLabel"></div>
       <div class="list" id="hits-list"></div>
     </section>
 
@@ -1646,6 +1653,8 @@
           type="search"
           placeholder="Buscar regla, condición o código…"
           aria-label="Buscar en reglas de Launch"
+          data-i18n-placeholder="launchSearchPlaceholder"
+          data-i18n-aria-label="launchSearchLabel"
           autocomplete="off"
           spellcheck="false"
         />
@@ -1655,6 +1664,7 @@
         id="launch-filters"
         role="group"
         aria-label="Filtrar reglas por resultado"
+        data-i18n-aria-label="launchFiltersLabel"
       ></div>
       <div class="list" id="launch-list"></div>
     </section>
@@ -1671,6 +1681,8 @@
         id="tenant-input"
         type="text"
         placeholder="slug de la org (experience.adobe.com/#/@…)"
+        data-i18n-placeholder="tenantPlaceholder"
+        data-i18n-title="tenantTitle"
         autocomplete="off"
         spellcheck="false"
         title="Slug de la organización en la URL del admin de Adobe Target (no es el orgId). Vacío = sin links a Target."
@@ -1682,6 +1694,7 @@
       <span class="footer__note" id="edge-info">Alloyscope</span>
     </footer>
 
+    <script src="i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

@@ -159,12 +159,13 @@ El manifest no tiene `default_popup`, así que `chrome.action.onClicked` dispara
 | Archivo | Rol |
 | --- | --- |
 | `manifest.json` | Configuración de la extensión (permisos, scripts, dominios, background) |
-| `_locales/en`, `_locales/es` | Nombre y resumen de la extensión por idioma (ficha de la tienda y `chrome://extensions`); la interfaz de la ventana está solo en español |
+| `_locales/en`, `_locales/es` | Nombre y resumen de la extensión por idioma (ficha de la tienda y `chrome://extensions`); la interfaz de la ventana se traduce aparte, con `i18n.js` |
 | `inject.js` | Captura respuestas y renderizado de Alloy, intercepta `sendEvent` de cada instancia de Alloy, `push()` en `window.digitalData` / `window.adobeDataLayer` y las reglas de Launch (`_satellite._monitors`) |
 | `content.js` | Puente postMessage → chrome.storage; valida forma y tamaño de cada mensaje (cualquier script de la página puede postear el mismo formato) |
 | `background.js` | Service worker: `chrome.action.onClicked` crea/enfoca la ventana independiente (único entry point), reapunta la ventana si se hace click desde otra pestaña, limpieza del puntero al cerrarse la ventana |
 | `popup.html` | UI (estructura HTML + CSS con metodología BEM), montada solo dentro de la ventana independiente |
 | `assets/fonts/` | IBM Plex Sans/Mono empaquetadas (licencia OFL en `LICENSE.txt`): la ventana no hace pedidos externos |
+| `i18n.js` | Textos de la ventana en español e inglés (`T`); el idioma sigue al de Chrome y `?lang=es\|en` lo fuerza |
 | `popup.js` | Lógica: renderizado de las 4 pestañas, tabs, live update (agrupado: como mucho una repintada por pestaña cada 400ms) |
 
 ---

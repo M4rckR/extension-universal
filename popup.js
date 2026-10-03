@@ -58,7 +58,7 @@ function emptyStateHtml(icon, html, withInject = false, warn = false) {
     <div class="empty-state${warn ? " empty-state--warn" : ""}">
       ${iconSvg(icon, "empty-state__icon")}
       <p class="empty-state__text">${html}</p>
-      ${withInject ? `<button class="btn-inject">Capturar ahora</button>` : ""}
+      ${withInject ? `<button class="btn-inject">${T.captureNow}</button>` : ""}
     </div>`;
 }
 
@@ -186,7 +186,7 @@ function showBlockedIn(listId) {
 
 /** Muestra un aviso cuando la página activa no admite inyección de scripts. */
 function showBlocked() {
-  setBlocked("ban", "Esta página no permite inyección de scripts.", "Página no inspeccionable");
+  setBlocked("ban", T.blockedText, T.blockedUrl);
 }
 
 /**
@@ -218,8 +218,8 @@ function getInspectedTab(callback) {
 function showTabClosed() {
   setBlocked(
     "closed",
-    "La pestaña que esta ventana estaba inspeccionando ya se cerró. Haz clic en el ícono de la extensión desde otra pestaña para inspeccionarla.",
-    "Pestaña cerrada",
+    T.tabClosedText,
+    T.tabClosedUrl,
   );
 }
 
@@ -239,10 +239,10 @@ function showStale(tabUrl) {
   setActSummary("");
   document.getElementById("list").innerHTML = emptyStateHtml(
     "refresh",
-    `Página distinta a la captura.<br>Recarga <strong>${escapeHtml(host)}</strong> para capturar.`,
+    T.staleHtml(escapeHtml(host)),
   );
   document.getElementById("count").textContent = "—";
-  document.getElementById("page-url").textContent = hostAndPath(tabUrl) || "Página distinta a la captura";
+  document.getElementById("page-url").textContent = hostAndPath(tabUrl) || T.staleUrl;
   setIndicator("warn");
 }
 
@@ -385,7 +385,7 @@ function renderActivityContent(domAction, idx, activityId) {
 
   const hasContent = typeof domAction.content === "string";
   if (fields.length === 0 && !hasContent) return "";
-  if (hasContent) fields.push(["tamaño", formatContentSize(domAction.content.length)]);
+  if (hasContent) fields.push([T.fieldSize, formatContentSize(domAction.content.length)]);
 
   const metaHtml = fields
     .map(([k, v]) => `<span class="activity__content-field"><b>${escapeHtml(k)}</b> ${escapeHtml(String(v))}</span>`)
@@ -397,20 +397,20 @@ function renderActivityContent(domAction, idx, activityId) {
     const note = !truncated
       ? ""
       : truncatedByChars
-        ? `Mostrando los primeros ${MAX_PREVIEW_CHARS} caracteres de ${domAction.content.length}.`
-        : `Mostrando ${previewLines} de ${totalLines} líneas.`;
+        ? T.previewChars(MAX_PREVIEW_CHARS, domAction.content.length)
+        : T.previewLines(previewLines, totalLines);
 
     bodyHtml = `
       <pre class="raw-pre">${escapeHtml(preview)}</pre>
       ${note ? `<div class="activity__content-note">${note}</div>` : ""}
-      <button class="btn-copy-content" data-idx="${idx}">Copiar completo</button>
+      <button class="btn-copy-content" data-idx="${idx}">${T.copyFull}</button>
     `;
   }
 
   const key = String(activityId);
   return `
     <details class="activity__content" data-key="${escapeHtml(key)}"${openActivityContent.has(key) ? " open" : ""}>
-      <summary class="raw-summary" aria-label="Ver contenido de la actividad ${escapeHtml(key)}">Ver contenido</summary>
+      <summary class="raw-summary" aria-label="${escapeHtml(T.viewContentAria(key))}">${T.viewContent}</summary>
       <div class="activity__content-meta">${metaHtml}</div>
       ${bodyHtml}
     </details>
@@ -472,18 +472,8 @@ function getRenderState(renderEvents) {
   return { byActivity, hasRendering, prehiding };
 }
 
-const RENDER_BADGES = {
-  ok: { label: "Renderizada", title: "Alloy confirmó que aplicó esta actividad en la página." },
-  failed: { label: "Falló el render", title: "Alloy intentó aplicar esta actividad y falló." },
-  pending: {
-    label: "Sin confirmar",
-    title: "Alloy empezó a aplicarla pero no confirmó que terminó (p. ej. el selector no existe en la página).",
-  },
-  none: {
-    label: "Sin render automático",
-    title: "Alloy no la aplicó solo: la renderiza la página (applyPropositions o renderDecisions: false) o es una oferta JSON.",
-  },
-};
+// Etiquetas y tooltips del estado de renderizado: ver T.render en i18n.js.
+const RENDER_BADGES = T.render;
 
 function renderBadgeHtml(state) {
   const badge = RENDER_BADGES[state.status];
@@ -495,10 +485,10 @@ function renderBadgeHtml(state) {
 function prehidingNoteHtml(prehiding) {
   if (!prehiding) return "";
   if (prehiding.stillHidden) {
-    return `<div class="list__note list__note--warn"><span>Prehiding: Alloy ocultó contenido y todavía no lo volvió a mostrar.</span></div>`;
+    return `<div class="list__note list__note--warn"><span>${T.prehidingStill}</span></div>`;
   }
   if (Number.isFinite(prehiding.hiddenMs)) {
-    return `<div class="list__note" title="Tiempo entre hide-containers y show-containers de Alloy"><span>Prehiding: el contenido estuvo oculto <b>${prehiding.hiddenMs} ms</b> mientras respondía Target.</span></div>`;
+    return `<div class="list__note" title="${escapeHtml(T.prehidingTitle)}"><span>${T.prehidingMs(prehiding.hiddenMs)}</span></div>`;
   }
   return "";
 }
@@ -533,7 +523,7 @@ function whyNoActivities(data) {
 
   if (data.pageSdk?.atjs && instances.length === 0) {
     const v = data.pageSdk.atjsVersion ? ` ${escapeHtml(data.pageSdk.atjsVersion)}` : "";
-    return { warn: true, html: `Esta página usa <strong>at.js${v}</strong> (Adobe Target clásico), no Web SDK (Alloy).<br>La extensión inspecciona Web SDK: acá funcionan <button class="inline-link" data-goto="launch">Launch</button> y <button class="inline-link" data-goto="eventos">Eventos</button>, no Actividades.` };
+    return { warn: true, html: T.whyAtjs(v) };
   }
 
   const failed = (data.launchRules || []).filter((r) => r.status === "failed");
@@ -544,22 +534,20 @@ function whyNoActivities(data) {
   if (decisionCalls.length === 0) {
     const targetRule = failed.find((r) => TARGET_RULE_RE.test(r.ruleName || "") && consentCond(r));
     if (targetRule) {
-      return { warn: true, html: `Launch no ejecutó la regla <strong>${escapeHtml(targetRule.ruleName)}</strong>: no se cumplió ${condText(consentCond(targetRule))}.<br>Parece la cookie de consentimiento: acepta las cookies del sitio y recarga. <button class="inline-link" data-goto="launch" data-search="${escapeHtml(targetRule.ruleName)}">Ver la regla en Launch</button>` };
+      return { warn: true, html: T.whyTargetRule(escapeHtml(targetRule.ruleName), condText(consentCond(targetRule)), ` data-search="${escapeHtml(targetRule.ruleName)}"`) };
     }
     const consentBlocked = failed.filter(consentCond);
     if (consentBlocked.length > 0) {
-      return { warn: true, html: `${consentBlocked.length} ${consentBlocked.length === 1 ? "regla de Launch espera" : "reglas de Launch esperan"} una cookie de consentimiento (p. ej. ${condText(consentCond(consentBlocked[0]))}) y Alloy no pidió decisiones a Target.<br>Acepta las cookies del sitio y recarga.` };
+      return { warn: true, html: T.whyConsent(consentBlocked.length, condText(consentCond(consentBlocked[0]))) };
     }
   }
 
   if (instances.length > 0) {
     if (decisionCalls.length > 0) {
       const noOffers = (data.renderEvents || []).some((e) => e.status === "no-offers");
-      return { warn: false, html: `Alloy pidió decisiones a Target${decisionCalls.length > 1 ? ` ${decisionCalls.length} veces` : ""}, pero no vino ninguna actividad para esta página${noOffers ? " (Alloy informó <span class=\"mono\">no-offers</span>)" : ""}.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se pidió y qué respondió.` };
+      return { warn: false, html: T.whyNoOffers(decisionCalls.length, noOffers) };
     }
-    return { warn: false, html: hits.length > 0
-      ? `Alloy hizo ${hits.length} ${hits.length === 1 ? "llamada" : "llamadas"} al Edge, pero ninguna pidió decisiones a Target.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se envió.`
-      : "Alloy está configurado, pero no envió ninguna llamada al Edge en esta carga.<br>Abre <button class=\"inline-link\" data-goto=\"launch\">Launch</button>: puede que la regla que lo dispara no se haya cumplido." };
+    return { warn: false, html: hits.length > 0 ? T.whyNoDecisionCalls(hits.length) : T.whyNoCalls };
   }
   return null;
 }
@@ -600,8 +588,7 @@ function render(currentTabUrl) {
       setActSummary("");
       list.innerHTML = emptyStateHtml(
         reason?.warn ? "alert" : "signal",
-        reason?.html ||
-          "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
+        reason?.html || T.noCaptures,
         !reason,
         !!reason?.warn,
       );
@@ -609,7 +596,7 @@ function render(currentTabUrl) {
       count.textContent = "0 ACT";
       // Sin capturas no hay "última": tras Limpiar no debe quedar la hora vieja.
       ts.textContent = "—";
-      pageUrl.textContent = hostAndPath(currentTabUrl) || "Sin página activa";
+      pageUrl.textContent = hostAndPath(currentTabUrl) || T.noPage;
       // Verde solo si hay señal de que la captura está viva (Alloy
       // configurado o Launch detectado); sin nada capturado, gris.
       setIndicator(!currentTabUrl ? "idle" : reason?.warn ? "warn" : reason || captureIsLive(data) ? "ok" : "idle");
@@ -619,8 +606,7 @@ function render(currentTabUrl) {
     pageUrl.textContent = hostAndPath(requests[0].url) || hostAndPath(currentTabUrl);
     setIndicator("ok");
 
-    ts.textContent =
-      "Última: " + new Date(requests[0].time).toLocaleTimeString("es-PE");
+    ts.textContent = T.lastResponse(new Date(requests[0].time).toLocaleTimeString(T.locale));
 
     // Aplana todas las decisiones de personalización de todos los requests capturados
     const allDecisions = requests.flatMap(
@@ -663,8 +649,7 @@ function render(currentTabUrl) {
       setActSummary("");
       list.innerHTML = emptyStateHtml(
         reason?.warn ? "alert" : "target",
-        reason?.html ||
-          `Alloy recibió ${requests.length} ${requests.length === 1 ? "respuesta" : "respuestas"} del Edge, pero ninguna trajo actividades de Target para esta página.`,
+        reason?.html || T.responsesNoActivities(requests.length),
         false,
         !!reason?.warn,
       );
@@ -694,7 +679,7 @@ function render(currentTabUrl) {
         const scope = formatScope(scopes[0] ?? d.scope);
         const moreScopes = scopes.slice(1);
         const { name, id, exp, actType } = getActivityInfo(d);
-        const displayName = name || `Actividad ${id}`;
+        const displayName = name || T.activityFallback(id);
         const targetUrl = getTargetUrl(actType, id);
         // Si no se pudo detectar el tipo, se ofrecen ambos links como hipótesis
         const urlAB = !actType ? getTargetUrl("AB", id) : null;
@@ -706,10 +691,10 @@ function render(currentTabUrl) {
 
         let actionsHtml = "";
         if (targetUrl) {
-          actionsHtml = `<a class="activity__open" href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener">Abrir en Target ↗</a>`;
+          actionsHtml = `<a class="activity__open" href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener">${T.openInTarget}</a>`;
         } else if (urlAB) {
           actionsHtml = `
-            <span class="activity__guess-label">Tipo no detectado. Abrir como:</span>
+            <span class="activity__guess-label">${T.typeUnknown}</span>
             <a href="${escapeHtml(urlAB)}" target="_blank" rel="noopener" class="guess-btn guess-btn--ab">A/B ↗</a>
             <a href="${escapeHtml(urlXT)}" target="_blank" rel="noopener" class="guess-btn guess-btn--xt">XT ↗</a>`;
         }
@@ -719,17 +704,17 @@ function render(currentTabUrl) {
           <div class="activity__tags">
             <span class="scope-tag scope-tag--${scope.type}" title="${escapeHtml(scope.type === "vec" ? "Visual Experience Composer (__view__)" : scope.label)}">${escapeHtml(scope.label)}</span>
             ${moreScopes.length ? `<span class="scope-tag scope-tag--more" title="${escapeHtml(moreScopes.map((x) => formatScope(x).label).join("\n"))}">+${moreScopes.length} ${moreScopes.length === 1 ? "scope" : "scopes"}</span>` : ""}
-            ${actType ? `<span class="activity__type activity__type--${actType.toLowerCase()}" title="Tipo inferido del nombre de la actividad: el payload no lo informa">${actType === "AB" ? "A/B" : "XT"}</span>` : ""}
+            ${actType ? `<span class="activity__type activity__type--${actType.toLowerCase()}" title="${escapeHtml(T.typeInferred)}">${actType === "AB" ? "A/B" : "XT"}</span>` : ""}
             ${rendered ? renderBadgeHtml(rendered) : ""}
           </div>
           <div class="activity__name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div>
           <div class="activity__meta">
-            <button class="activity__id" data-copy="${escapeHtml(id)}" title="Copiar ID de la actividad">#${escapeHtml(id)}</button>
+            <button class="activity__id" data-copy="${escapeHtml(id)}" title="${escapeHtml(T.copyIdTitle)}">#${escapeHtml(id)}</button>
             ${exp ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__experience">${escapeHtml(exp)}</span>` : ""}
-            ${knowsDisplay && notified ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display" title="Alloy notificó el display a Target: la impresión se cuenta">impresión notificada</span>` : ""}
-            ${knowsDisplay && !notified && rendered?.status === "ok" ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display activity__display--missing" title="Alloy la aplicó, pero en esta carga no notificó el display a Target: la impresión no se contó">impresión sin notificar</span>` : ""}
+            ${knowsDisplay && notified ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display" title="${escapeHtml(T.impNotifiedTitle)}">${T.impNotified}</span>` : ""}
+            ${knowsDisplay && !notified && rendered?.status === "ok" ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display activity__display--missing" title="${escapeHtml(T.impMissingTitle)}">${T.impMissing}</span>` : ""}
           </div>
-          ${rendered?.status === "failed" && rendered.error ? `<div class="activity__render-error">Error al renderizar: ${escapeHtml(rendered.error)}</div>` : ""}
+          ${rendered?.status === "failed" && rendered.error ? `<div class="activity__render-error">${T.renderError(escapeHtml(rendered.error))}</div>` : ""}
           ${actionsHtml ? `<div class="activity__actions">${actionsHtml}</div>` : ""}
           ${domAction ? renderActivityContent(domAction, idx, id) : ""}
         </div>
@@ -741,10 +726,10 @@ function render(currentTabUrl) {
     // los tendrían, en vez de dejar que el usuario descubra la barra de abajo.
     const tenantNote = tenant
       ? ""
-      : `<div class="list__note"><span>Configura el tenant para abrir actividades en Target.</span><button class="list__note-action" id="focus-tenant">Configurar</button></div>`;
+      : `<div class="list__note"><span>${T.tenantNote}</span><button class="list__note-action" id="focus-tenant">${T.configure}</button></div>`;
 
     const displayNote = renderedWithoutDisplay
-      ? `<div class="list__note list__note--warn"><span>${renderedWithoutDisplay} ${renderedWithoutDisplay === 1 ? "actividad renderizada no notificó" : "actividades renderizadas no notificaron"} la impresión (display) en esta carga: Target la cuenta recién cuando se notifica.</span><button class="list__note-action" data-goto="hits" data-filter="display">Ver Hits</button></div>`
+      ? `<div class="list__note list__note--warn"><span>${T.displayNote(renderedWithoutDisplay)}</span><button class="list__note-action" data-goto="hits" data-filter="display">${T.viewHits}</button></div>`
       : "";
 
     // Veredicto de la página en una línea: lo que un QA firma. Cada tramo
@@ -754,9 +739,9 @@ function render(currentTabUrl) {
     const notifiedCount = unique.filter((d) => displayed.has(String(d.scopeDetails?.activity?.id))).length;
     setActSummary(
       [
-        `<b>${unique.length}</b> ${unique.length === 1 ? "actividad" : "actividades"}`,
-        renderState.hasRendering ? `<b>${renderedOk}</b> ${renderedOk === 1 ? "renderizada" : "renderizadas"}` : null,
-        knowsDisplay ? `<b>${notifiedCount}</b> con impresión notificada` : null,
+        T.verdictActivities(unique.length),
+        renderState.hasRendering ? T.verdictRendered(renderedOk) : null,
+        knowsDisplay ? T.verdictNotified(notifiedCount) : null,
       ]
         .filter(Boolean)
         .join(" · "),
@@ -799,8 +784,8 @@ document.getElementById("list").addEventListener("click", (e) => {
   if (typeof content !== "string") return;
   navigator.clipboard
     .writeText(content)
-    .then(() => showToast("Contenido completo copiado al portapapeles."))
-    .catch(() => showToast("No se pudo copiar al portapapeles.", { error: true }));
+    .then(() => showToast(T.contentCopied))
+    .catch(() => showToast(T.copyFailed, { error: true }));
 });
 
 // Copia al portapapeles: el ID de una actividad (data-copy) o el payload
@@ -810,13 +795,13 @@ function copyText(text, okMessage) {
   navigator.clipboard
     .writeText(text)
     .then(() => showToast(okMessage))
-    .catch(() => showToast("No se pudo copiar al portapapeles.", { error: true }));
+    .catch(() => showToast(T.copyFailed, { error: true }));
 }
 
 document.addEventListener("click", (e) => {
   const idBtn = e.target.closest("[data-copy]");
   if (idBtn) {
-    copyText(idBtn.dataset.copy, `ID ${idBtn.dataset.copy} copiado.`);
+    copyText(idBtn.dataset.copy, T.idCopied(idBtn.dataset.copy));
     return;
   }
   const evBtn = e.target.closest("[data-copy-event]");
@@ -829,7 +814,7 @@ document.addEventListener("click", (e) => {
   } catch (err) {
     json = String(ev.payload);
   }
-  copyText(json, "Payload copiado al portapapeles.");
+  copyText(json, T.payloadCopied);
 });
 
 // Búsqueda en Eventos: re-render con un pequeño debounce mientras se tipea.
@@ -876,11 +861,11 @@ document.getElementById("clear").addEventListener("click", () => {
     clearCapturedData(() => {
       getInspectedTab((tab) => render(tab?.url || ""));
       if (!hadData) {
-        showToast("No había capturas para borrar.");
+        showToast(T.nothingToClear);
         return;
       }
-      showToast("Capturas y eventos borrados.", {
-        action: "Deshacer",
+      showToast(T.cleared, {
+        action: T.undo,
         duration: UNDO_WINDOW_MS,
         onAction: () => {
           chrome.storage.local.get(CLEARABLE_KEYS, (now) => {
@@ -900,7 +885,7 @@ document.getElementById("clear").addEventListener("click", () => {
                   ...(now.launchRules || []),
                 ].slice(0, 400),
               },
-              () => showToast("Capturas restauradas."),
+              () => showToast(T.restored),
             );
           });
         },
@@ -923,7 +908,7 @@ document.addEventListener("click", (e) => {
   getInspectedTab(async (tab) => {
     const tabId = tab?.id;
     if (!tabId) {
-      showToast("No hay una pestaña para inspeccionar.", { error: true });
+      showToast(T.noTab, { error: true });
       return;
     }
     btn.disabled = true;
@@ -933,11 +918,11 @@ document.addEventListener("click", (e) => {
       // está registrado ese mensaje se pierde.
       await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
       await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["inject.js"] });
-      showToast("Captura activa en la pestaña. Lo que Target ya respondió antes no se recupera: recarga la página para verlo.", {
+      showToast(T.captureActive, {
         duration: 7000,
       });
     } catch (err) {
-      showToast("No se pudo inyectar en esta pestaña (página protegida o sin permiso).", { error: true });
+      showToast(T.injectFailed, { error: true });
     } finally {
       btn.disabled = false;
     }
@@ -964,7 +949,7 @@ function renderInstanceInfo() {
     el.textContent =
       list.length === 1
         ? `datastream ${shortEdge(list[0])}`
-        : `${list.length} instancias · ${list.map(shortEdge).join(" · ")}`;
+        : `${T.instances(list.length)} · ${list.map(shortEdge).join(" · ")}`;
     el.title = list
       .map((i) => `${i.namespace || "?"} → datastream: ${i.edgeConfigId || "?"} · orgId: ${i.orgId || "?"} · edgeDomain: ${i.edgeDomain || "?"}`)
       .join("\n");
@@ -995,13 +980,13 @@ function setupTenantInput() {
     const valid = next === "" || /^[A-Za-z0-9._-]+$/.test(next);
     input.setAttribute("aria-invalid", String(!valid));
     if (!valid) {
-      showToast("Tenant inválido: usa solo el slug que aparece después de @ en la URL de Target.", { error: true });
+      showToast(T.tenantInvalid, { error: true });
       return;
     }
     if (next === tenant) return;
     tenant = next;
     chrome.storage.local.set({ tenant }, () =>
-      showToast(tenant ? "Tenant guardado: los links a Target ya están activos." : "Tenant borrado: sin links a Target."),
+      showToast(tenant ? T.tenantSaved : T.tenantCleared),
     );
     getInspectedTab((tab) => tab && isAllowedDomain(tab.url) && render(tab.url));
   };
@@ -1126,7 +1111,7 @@ function mboxSectionHtml(requests, domMboxes) {
     <div class="mbox-section mbox-section--empty">
       <div class="mbox-section__summary mbox-section__summary--static">
         <span class="mbox-section__title">mBoxes</span>
-        <span>Sin mboxes con nombre ni elementos <span class="mono">[data-mbox]</span> en esta página.${hasVec ? ` Todo corre por VEC (<span class="mono">__view__</span>).` : ""}</span>
+        <span>${T.mboxNone(hasVec)}</span>
       </div>
     </div>`;
   }
@@ -1141,10 +1126,10 @@ function mboxSectionHtml(requests, domMboxes) {
   const pill = (n, label, cls) =>
     n > 0 ? `<span class="status-badge ${cls}">${n} ${label}</span>` : `<span class="mbox-section__zero">${n} ${label}</span>`;
   const summary = [
-    pill(enUso, "en uso", "status-badge--active"),
-    pill(libres, libres === 1 ? "libre" : "libres", "status-badge--free"),
-    pill(soloAlloy, "solo Alloy", "status-badge--alloy"),
-    `<span class="mbox-section__dom" title="Elementos [data-mbox] encontrados en la página">${domSet.size} en el DOM</span>`,
+    pill(enUso, T.mboxInUseCount, "status-badge--active"),
+    pill(libres, T.mboxFreeCount(libres), "status-badge--free"),
+    pill(soloAlloy, T.mboxAlloyCount, "status-badge--alloy"),
+    `<span class="mbox-section__dom" title="${escapeHtml(T.mboxDomTitle)}">${T.mboxInDom(domSet.size)}</span>`,
   ].join("");
 
   // Orden: activos primero, luego libres; alfabético dentro de cada grupo
@@ -1164,16 +1149,16 @@ function mboxSectionHtml(requests, domMboxes) {
       let pillClass, pillLabel, pillTitle;
       if (isActive && isInDom) {
         pillClass = "status-badge--active";
-        pillLabel = "En uso";
-        pillTitle = "Está en el DOM y Target respondió para este scope";
+        pillLabel = T.mboxInUse;
+        pillTitle = T.mboxInUseTitle;
       } else if (isActive) {
         pillClass = "status-badge--alloy";
-        pillLabel = "Solo Alloy";
-        pillTitle = "Target respondió, pero no hay ningún elemento [data-mbox] con este nombre";
+        pillLabel = T.mboxAlloy;
+        pillTitle = T.mboxAlloyTitle;
       } else {
         pillClass = "status-badge--free";
-        pillLabel = "Libre";
-        pillTitle = "Está en el DOM, pero Target no le asignó nada";
+        pillLabel = T.mboxFree;
+        pillTitle = T.mboxFreeTitle;
       }
       // mbox sale de [data-mbox] de la página y los nombres del payload: se escapan.
       return `
@@ -1183,7 +1168,7 @@ function mboxSectionHtml(requests, domMboxes) {
             ${names.map((n) => `<div class="mbox-row__activity"><span aria-hidden="true">↳</span> ${escapeHtml(n)}</div>`).join("")}
           </div>
           <div class="mbox-row__status">
-            <span class="status-badge ${pillClass}" title="${pillTitle}">${pillLabel}</span>
+            <span class="status-badge ${pillClass}" title="${escapeHtml(pillTitle)}">${pillLabel}</span>
           </div>
         </div>`;
     })
@@ -1294,7 +1279,7 @@ let lastRenderedEvents = new Map();
 /** Renderiza una sola ocurrencia de evento (nombre, hora, resumen y payload crudo colapsable). */
 function renderEventRow(e) {
   const { eventName, title, meta } = getEventSummary(e.payload);
-  const time = new Date(e.time).toLocaleTimeString("es-PE");
+  const time = new Date(e.time).toLocaleTimeString(T.locale);
   const sincePageLoad =
     typeof e.timeSincePageLoad === "number"
       ? `+${(e.timeSincePageLoad / 1000).toFixed(1)}s`
@@ -1316,9 +1301,9 @@ function renderEventRow(e) {
       ${title ? `<div class="event-row__title">${escapeHtml(title)}</div>` : ""}
       ${meta.length ? `<div class="event-row__meta">${meta.map(escapeHtml).join(" · ")}</div>` : ""}
       <details class="event-row__raw" data-key="${escapeHtml(eventKey(e))}"${openEventPayloads.has(eventKey(e)) ? " open" : ""}>
-        <summary class="raw-summary" aria-label="Payload de ${escapeHtml(eventName)}">Payload</summary>
+        <summary class="raw-summary" aria-label="${escapeHtml(T.payloadAria(eventName))}">Payload</summary>
         <pre class="raw-pre">${escapeHtml(rawJson)}</pre>
-        <button class="btn-copy-content" data-copy-event="${escapeHtml(eventKey(e))}">Copiar payload</button>
+        <button class="btn-copy-content" data-copy-event="${escapeHtml(eventKey(e))}">${T.copyPayload}</button>
       </details>
     </div>
   `;
@@ -1363,12 +1348,12 @@ function groupEventsByPage(events) {
 
 /** hostname+pathname legible para el header de una sección de página. Sin pageUrl (entradas del modelo viejo) → bucket "Página desconocida". */
 function formatPageLabel(pageUrl) {
-  if (!pageUrl) return "Página desconocida";
+  if (!pageUrl) return T.unknownPage;
   try {
     const url = new URL(pageUrl);
     return url.hostname + url.pathname;
   } catch (e) {
-    return "Página desconocida";
+    return T.unknownPage;
   }
 }
 
@@ -1379,8 +1364,8 @@ function renderEventGroupsHtml(events) {
       if (g.items.length === 1) return renderEventRow(g.items[0]);
 
       // items[0] es el más reciente del grupo (events viene más reciente primero)
-      const newest = new Date(g.items[0].time).toLocaleTimeString("es-PE");
-      const oldest = new Date(g.items[g.items.length - 1].time).toLocaleTimeString("es-PE");
+      const newest = new Date(g.items[0].time).toLocaleTimeString(T.locale);
+      const oldest = new Date(g.items[g.items.length - 1].time).toLocaleTimeString(T.locale);
       const timeLabel = oldest === newest ? newest : `${oldest} → ${newest}`;
       const groupKey = `${g.key}|${eventKey(g.items[g.items.length - 1])}`;
       const expanded = expandedEventGroups.has(groupKey);
@@ -1428,8 +1413,8 @@ function renderEventos() {
       list.innerHTML = emptyStateHtml(
         "list",
         live
-          ? "Sin eventos aún.<br>La captura está activa: esta página todavía no hizo <span class=\"mono\">push</span> a <span class=\"mono\">digitalData</span> ni a <span class=\"mono\">adobeDataLayer</span> (o usa otra capa de datos)."
-          : "Sin eventos aún.<br>Interactúa con la página para ver los pushes a la capa de datos (digitalData o adobeDataLayer).",
+          ? T.noEventsLive
+          : T.noEvents,
         !live,
       );
       return;
@@ -1458,8 +1443,8 @@ function renderEventos() {
     if (visible.length === 0) {
       list.innerHTML =
         byChip.length === 0
-          ? emptyStateHtml("filter", "Todos los eventos están filtrados.<br>Activa algún filtro arriba para verlos.")
-          : emptyStateHtml("filter", `Ningún evento coincide con <strong>${escapeHtml(eventSearch)}</strong>.`);
+          ? emptyStateHtml("filter", T.allEventsFiltered)
+          : emptyStateHtml("filter", T.noEventMatch(escapeHtml(eventSearch)));
       return;
     }
 
@@ -1480,8 +1465,8 @@ function renderEventos() {
           <button class="event-page__header" aria-expanded="${expanded}">
             ${iconSvg("chevron", "event-page__chevron")}
             <span class="event-page__path" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-            ${pageIdx === 0 ? `<span class="event-page__current" title="Página con el evento más reciente">más reciente</span>` : ""}
-            <span class="event-page__count">${count} evento${count === 1 ? "" : "s"}</span>
+            ${pageIdx === 0 ? `<span class="event-page__current" title="${escapeHtml(T.mostRecentTitle)}">${T.mostRecent}</span>` : ""}
+            <span class="event-page__count">${T.eventCount(count)}</span>
           </button>
           <div class="event-page__items">${renderEventGroupsHtml(pageGroup.items)}</div>
         </div>
@@ -1549,14 +1534,10 @@ document.getElementById("event-list").addEventListener(
 const launchFilterState = { completed: true, failed: true };
 let launchSearch = "";
 
+// Textos por resultado en T.rule (i18n.js); acá solo la clase del badge.
 const RULE_STATUS = {
-  completed: { label: "Completada", chip: "Completadas", badge: "status-badge--rule-ok", title: "Se disparó, cumplió sus condiciones y ejecutó sus acciones." },
-  failed: {
-    label: "Condición no cumplida",
-    chip: "Condición no cumplida",
-    badge: "status-badge--rule-failed",
-    title: "Se disparó pero una condición dio falso: no ejecutó sus acciones en esta página. Es normal para reglas de otras páginas.",
-  },
+  completed: { ...T.rule.completed, badge: "status-badge--rule-ok" },
+  failed: { ...T.rule.failed, badge: "status-badge--rule-failed" },
 };
 
 /** "+2.5s" desde la carga de la página, o "" si no hay tiempo. */
@@ -1567,7 +1548,7 @@ function formatSinceLoad(ms) {
 /** Condición fallida legible: "core · cookie politica_x" (con NOT si estaba negada). */
 function formatCondition(c) {
   const head = [c.extension, c.kind].filter(Boolean).join(" · ");
-  return `${c.negate ? "NOT " : ""}<b>${escapeHtml(head || "condición")}</b>${c.detail ? " " + escapeHtml(c.detail) : ""}`;
+  return `${c.negate ? "NOT " : ""}<b>${escapeHtml(head || T.conditionFallback)}</b>${c.detail ? " " + escapeHtml(c.detail) : ""}`;
 }
 
 // Bloques de código abiertos por el usuario (clave "<rule.key>|c|<i>" para
@@ -1654,26 +1635,26 @@ function codeBlockHtml(item, key, owner = "") {
   const open = openRuleCode.has(key);
   return `
     <details class="rule-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
-      <summary class="raw-summary"${owner ? ` aria-label="${isCode ? "Ver código" : "Ver configuración"} de ${escapeHtml(owner)}"` : ""}>${isCode ? "Ver código" : "Ver configuración"}${escapeHtml(lang)}</summary>
+      <summary class="raw-summary"${owner ? ` aria-label="${escapeHtml(T.labelOf(isCode ? T.viewCode : T.viewSettings, owner))}"` : ""}>${isCode ? T.viewCode : T.viewSettings}${escapeHtml(lang)}</summary>
       <pre class="raw-pre"></pre>
-      ${item.codeTruncated ? `<div class="activity__content-note">Recortado a ${length} caracteres: el código completo está en la librería de Launch de la página.</div>` : ""}
-      <button class="btn-copy-content" data-copy-code="${escapeHtml(key)}">${isCode ? "Copiar código" : "Copiar configuración"}</button>
+      ${item.codeTruncated ? `<div class="activity__content-note">${T.codeTruncated(length)}</div>` : ""}
+      <button class="btn-copy-content" data-copy-code="${escapeHtml(key)}">${isCode ? T.copyCode : T.copySettings}</button>
     </details>`;
 }
 
 /** Línea de una condición fallida + su código o configuración, colapsado. */
 function renderConditionHtml(rule, c, i) {
-  return `<div class="rule-row__cond">${formatCondition(c)}</div>${codeBlockHtml(c, `${rule.key}|c|${i}`, `la condición ${c.kind || ""} de ${rule.ruleName || ""}`)}`;
+  return `<div class="rule-row__cond">${formatCondition(c)}</div>${codeBlockHtml(c, `${rule.key}|c|${i}`, T.ownerCondition(c.kind || "", rule.ruleName || ""))}`;
 }
 
 /** Línea de una acción (ejecutada, o que habría ejecutado una regla fallida) + su código, configuración o URL externa. */
 function renderActionHtml(rule, a, i) {
-  const head = [a.extension, a.kind].filter(Boolean).join(" · ") || "acción";
+  const head = [a.extension, a.kind].filter(Boolean).join(" · ") || T.actionFallback;
   // externalUrl ya viene validada como http(s) desde content.js; se escapa igual.
   const external = a.externalUrl
-    ? ` · <a class="rule-row__link" href="${escapeHtml(a.externalUrl)}" target="_blank" rel="noopener" title="${escapeHtml(a.externalUrl)}">código externo ↗</a>`
+    ? ` · <a class="rule-row__link" href="${escapeHtml(a.externalUrl)}" target="_blank" rel="noopener" title="${escapeHtml(a.externalUrl)}">${T.externalCode}</a>`
     : "";
-  return `<div class="rule-row__cond"><span aria-hidden="true">→</span> <b>${escapeHtml(head)}</b>${external}</div>${codeBlockHtml(a, `${rule.key}|a|${i}`, `la acción ${a.kind || ""} de ${rule.ruleName || ""}`)}`;
+  return `<div class="rule-row__cond"><span aria-hidden="true">→</span> <b>${escapeHtml(head)}</b>${external}</div>${codeBlockHtml(a, `${rule.key}|a|${i}`, T.ownerAction(a.kind || "", rule.ruleName || ""))}`;
 }
 
 function ruleMatchesSearch(rule, query) {
@@ -1699,7 +1680,7 @@ function renderLaunchInfoCard(info, rules) {
   const envClass = ["production", "staging", "development"].includes(env) ? ` env-badge--${env}` : "";
   const build = (() => {
     const d = new Date(info.buildDate);
-    return Number.isNaN(d.getTime()) ? null : d.toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" });
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleString(T.locale, { dateStyle: "short", timeStyle: "short" });
   })();
   const meta = [
     build ? `build ${build}` : null,
@@ -1711,16 +1692,16 @@ function renderLaunchInfoCard(info, rules) {
   card.hidden = false;
   card.innerHTML = `
     <div class="launch-card__row">
-      <span class="launch-card__name" title="${escapeHtml(info.propertyName || "")}">${escapeHtml(info.propertyName || "Propiedad sin nombre")}</span>
-      <span class="env-badge${envClass}" title="Entorno de la librería de Launch que cargó esta página">${escapeHtml(env)}</span>
+      <span class="launch-card__name" title="${escapeHtml(info.propertyName || "")}">${escapeHtml(info.propertyName || T.unnamedProperty)}</span>
+      <span class="env-badge${envClass}" title="${escapeHtml(T.envTitle)}">${escapeHtml(env)}</span>
     </div>
     ${meta.length ? `<div class="launch-card__meta">${meta.map(escapeHtml).join(" · ")}</div>` : ""}
     ${
       env !== "production" && env !== "?"
-        ? `<div class="launch-card__warning">Esta página carga la librería de <strong>${escapeHtml(env)}</strong>, no la de production: no es lo que ven los usuarios.</div>`
+        ? `<div class="launch-card__warning">${T.envWarning(escapeHtml(env))}</div>`
         : ""
     }
-    ${rules.length ? `<div class="launch-card__summary"><b>${completed}</b> ${completed === 1 ? "regla completada" : "reglas completadas"} · <b>${failed}</b> con condición no cumplida</div>` : ""}
+    ${rules.length ? `<div class="launch-card__summary">${T.launchSummary(completed, failed)}</div>` : ""}
   `;
 }
 
@@ -1737,15 +1718,8 @@ function renderLaunch() {
     if (rules.length === 0) {
       filters.innerHTML = "";
       list.innerHTML = info
-        ? emptyStateHtml(
-            "list",
-            "Launch está cargado, pero no se capturaron reglas.<br>Recarga la página: las reglas de carga se disparan antes de que se las pueda escuchar en una pestaña ya abierta.",
-          )
-        : emptyStateHtml(
-            "box",
-            "No se detectó Adobe Launch (Tags) en esta página.<br>Si la página lo usa, recárgala con la extensión activa.",
-            true,
-          );
+        ? emptyStateHtml("list", T.launchNoRules)
+        : emptyStateHtml("box", T.launchNotDetected, true);
       return;
     }
 
@@ -1774,8 +1748,8 @@ function paintLaunchRules(rules) {
   if (visible.length === 0) {
     list.innerHTML =
       byChip.length === 0
-        ? emptyStateHtml("filter", "Todas las reglas están filtradas.<br>Activa algún filtro arriba para verlas.")
-        : emptyStateHtml("filter", `Ninguna regla coincide con <strong>${escapeHtml(launchSearch)}</strong>.`);
+        ? emptyStateHtml("filter", T.allRulesFiltered)
+        : emptyStateHtml("filter", T.noRuleMatch(escapeHtml(launchSearch)));
     return;
   }
 
@@ -1797,7 +1771,7 @@ function paintLaunchRules(rules) {
   list.innerHTML = sorted
     .map((r, idx) => {
       const s = RULE_STATUS[r.status];
-      const name = r.ruleName || r.ruleId || "Regla sin nombre";
+      const name = r.ruleName || r.ruleId || T.unnamedRule;
       // Fallidas: la condición que no se cumplió + lo que habrían ejecutado.
       // Completadas: lo que ejecutaron.
       const conditions = r.status === "failed" ? r.conditions || [] : [];
@@ -1809,7 +1783,7 @@ function paintLaunchRules(rules) {
       const actionsBlock =
         r.status === "failed" && actions.length
           ? `<details class="rule-row__actions" data-key="${escapeHtml(actsKey)}"${openRuleCode.has(actsKey) ? " open" : ""}>
-               <summary class="raw-summary" aria-label="Acciones que no se ejecutaron de ${escapeHtml(name)}" title="La condición no se cumplió, así que estas acciones no corrieron en esta página">${actions.length === 1 ? "1 acción que no se ejecutó" : `${actions.length} acciones que no se ejecutaron`}</summary>
+               <summary class="raw-summary" aria-label="${escapeHtml(T.actionsNotRunAria(name))}" title="${escapeHtml(T.actionsNotRunTitle)}">${T.actionsNotRun(actions.length)}</summary>
                ${actionsHtml}
              </details>`
           : actionsHtml;
@@ -1821,8 +1795,8 @@ function paintLaunchRules(rules) {
       <div class="rule-row" data-key="${escapeHtml(r.key)}|row">
         <div class="rule-row__header">
           <span class="status-badge ${s.badge}" title="${escapeHtml(s.title)}">${s.label}</span>
-          ${r.count > 1 ? `<span class="rule-row__count" title="Veces que se disparó">×${r.count}</span>` : ""}
-          ${when ? `<span class="event-row__time" title="Desde la carga de la página">${when}</span>` : ""}
+          ${r.count > 1 ? `<span class="rule-row__count" title="${escapeHtml(T.timesFired)}">×${r.count}</span>` : ""}
+          ${when ? `<span class="event-row__time" title="${escapeHtml(T.sinceLoad)}">${when}</span>` : ""}
         </div>
         <div class="rule-row__name" title="${escapeHtml(name)}${r.ruleId ? " · " + escapeHtml(r.ruleId) : ""}">${escapeHtml(name)}</div>
         ${conditions.map((c, i) => renderConditionHtml(r, c, i)).join("")}
@@ -1851,7 +1825,7 @@ document.getElementById("launch-list").addEventListener("click", (e) => {
   const item = ruleCodeItem(btn.dataset.copyCode);
   loadCode(btn.dataset.copyCode, (code) => {
     if (!code) return;
-    copyText(code, item?.kind === "customCode" ? "Código copiado." : "Configuración copiada.");
+    copyText(code, item?.kind === "customCode" ? T.codeCopied : T.settingsCopied);
   });
 });
 
@@ -1894,17 +1868,17 @@ document.getElementById("launch-search").addEventListener("input", (e) => {
 // `requests`, que ya lo guarda — no se duplica). content.js ya calculó el
 // resumen (eventTypes, scopes, actividades cuyo display se notifica).
 const HIT_TITLES = {
-  "identity/acquire": "Pedido de identidad (ECID)",
-  "privacy/set-consent": "Consentimiento",
+  "identity/acquire": T.hitIdentity,
+  "privacy/set-consent": T.hitConsent,
 };
 // Filtro de Hits (en memoria, como los de Eventos y Launch).
 const hitIsError = (h) => !!h.error || (Number.isFinite(h.status) && (h.status < 200 || h.status >= 300));
 const HIT_FILTERS = {
-  all: { label: "Todas", test: () => true },
-  decisions: { label: "Decisiones", test: (h) => (h.scopes || []).length > 0 || (h.eventTypes || []).includes("decisioning.propositionFetch") || h.decisions > 0 },
-  display: { label: "Impresión", test: (h) => (h.displayedActivities || []).length > 0 },
-  error: { label: "Con error", test: hitIsError },
-  pending: { label: "Sin respuesta", test: (h) => !h.responded && !h.error },
+  all: { label: T.hitFilter.all, test: () => true },
+  decisions: { label: T.hitFilter.decisions, test: (h) => (h.scopes || []).length > 0 || (h.eventTypes || []).includes("decisioning.propositionFetch") || h.decisions > 0 },
+  display: { label: T.hitFilter.display, test: (h) => (h.displayedActivities || []).length > 0 },
+  error: { label: T.hitFilter.error, test: hitIsError },
+  pending: { label: T.hitFilter.pending, test: (h) => !h.responded && !h.error },
 };
 let hitFilter = "all";
 
@@ -1914,11 +1888,11 @@ let lastRenderedHits = new Map();
 let lastHitResponses = new Map();
 
 function hitStatusBadge(h) {
-  if (h.error) return `<span class="status-badge status-badge--hit-error" title="${escapeHtml(h.error)}">Falló</span>`;
-  if (!h.responded) return `<span class="status-badge status-badge--hit-pending" title="Alloy la envió y todavía no llegó respuesta">Sin respuesta</span>`;
+  if (h.error) return `<span class="status-badge status-badge--hit-error" title="${escapeHtml(h.error)}">${T.hitFailed}</span>`;
+  if (!h.responded) return `<span class="status-badge status-badge--hit-pending" title="${escapeHtml(T.hitPendingTitle)}">${T.hitPending}</span>`;
   const ok = !Number.isFinite(h.status) || (h.status >= 200 && h.status < 300);
   const label = Number.isFinite(h.status) ? String(h.status) : "OK";
-  return `<span class="status-badge status-badge--hit-${ok ? "ok" : "error"}" title="Código de estado de la respuesta del Edge">${label}</span>`;
+  return `<span class="status-badge status-badge--hit-${ok ? "ok" : "error"}" title="${escapeHtml(T.hitStatusTitle)}">${label}</span>`;
 }
 
 function hitJson(value) {
@@ -1945,7 +1919,7 @@ function hitBlocksHtml(h, title) {
     .map(([which, label]) => {
       const key = `${h.requestId}|${which}`;
       const open = openHitBlocks.has(key);
-      return `<button class="hit-row__toggle" data-hit-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-label="${label} de ${escapeHtml(title)}">${iconSvg("chevron", "hit-row__chevron")}${label}</button>`;
+      return `<button class="hit-row__toggle" data-hit-toggle="${escapeHtml(key)}" aria-expanded="${open}" aria-label="${escapeHtml(T.labelOf(label, title))}">${iconSvg("chevron", "hit-row__chevron")}${label}</button>`;
     })
     .join("");
   const panels = blocks
@@ -1956,7 +1930,7 @@ function hitBlocksHtml(h, title) {
       <div class="hit-row__panel" data-key="${escapeHtml(key)}"${open ? "" : " hidden"}>
         <div class="hit-row__panel-label">${label}</div>
         <pre class="raw-pre">${open ? escapeHtml(hitJson(value)) : ""}</pre>
-        <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">Copiar ${label.toLowerCase()}</button>
+        <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">${T.copyBlock(label)}</button>
       </div>`;
     })
     .join("");
@@ -1983,8 +1957,8 @@ function renderHits() {
       list.innerHTML = emptyStateHtml(
         "signal",
         live
-          ? "Sin llamadas al Edge en esta carga.<br>La captura está activa, pero Alloy no envió nada: puede que la regla que lo dispara no se haya cumplido. <button class=\"inline-link\" data-goto=\"launch\">Ver Launch</button>"
-          : "Sin llamadas al Edge en esta carga.<br>Recarga la página con la extensión activa: Alloy hace sus llamadas al cargar.",
+          ? T.noHitsLive
+          : T.noHits,
         !live,
       );
       return;
@@ -2011,10 +1985,10 @@ function renderHits() {
     const displays = hits.filter((h) => (h.displayedActivities || []).length > 0).length;
     summary.hidden = false;
     summary.innerHTML = [
-      `<b>${hits.length}</b> ${hits.length === 1 ? "llamada" : "llamadas"} al Edge`,
-      `<b>${failed}</b> con error`,
-      pending ? `<b>${pending}</b> sin respuesta` : null,
-      `<span title="Llamadas que notifican el display (decisioning.propositionDisplay): así Target cuenta la impresión">${displays} ${displays === 1 ? "notificación" : "notificaciones"} de impresión</span>`,
+      T.hitsCalls(hits.length),
+      T.hitsErrors(failed),
+      pending ? T.hitsPending(pending) : null,
+      `<span title="${escapeHtml(T.hitsImpTitle)}">${T.hitsImp(displays)}</span>`,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -2042,7 +2016,7 @@ function renderHits() {
       .map((h) => {
         const title = (h.eventTypes || []).length
           ? h.eventTypes.join(", ")
-          : HIT_TITLES[h.endpoint] || h.endpoint || "Llamada";
+          : HIT_TITLES[h.endpoint] || h.endpoint || T.callFallback;
         const meta = [];
         if ((h.scopes || []).length) meta.push(`scopes <b>${h.scopes.map(escapeHtml).join(", ")}</b>`);
         if (h.responded) {
@@ -2052,13 +2026,13 @@ function renderHits() {
             .filter((t) => t !== "personalization:decisions")
             .forEach((t) => typeCounts.set(t, (typeCounts.get(t) || 0) + 1));
           const resp = [
-            h.decisions ? `${h.decisions} ${h.decisions === 1 ? "decisión" : "decisiones"}` : null,
+            h.decisions ? T.decisions(h.decisions) : null,
             ...[...typeCounts].map(([t, n]) => (n > 1 ? `${t} ×${n}` : t)),
           ].filter(Boolean);
-          if (resp.length) meta.push(`respuesta: ${resp.map(escapeHtml).join(" · ")}`);
+          if (resp.length) meta.push(`${T.responsePrefix}${resp.map(escapeHtml).join(" · ")}`);
         }
         const displayed = (h.displayedActivities || []).length
-          ? `<div class="hit-row__meta hit-row__display">Notifica la impresión (display) de:</div>
+          ? `<div class="hit-row__meta hit-row__display">${T.reportsImpression}</div>
              <ul class="hit-row__displayed">${h.displayedActivities
                .map((id) => {
                  const name = activityNames.get(String(id));
@@ -2073,8 +2047,8 @@ function renderHits() {
           <div class="hit-row__header">
             <span class="event-tag" title="${escapeHtml(h.url || "")}">${escapeHtml(h.endpoint || "?")}</span>
             ${hitStatusBadge(h)}
-            ${multiInstance && h.instance ? `<span class="rule-row__count" title="Instancia de Alloy">${escapeHtml(h.instance)}</span>` : ""}
-            ${Number.isFinite(h.t) ? `<span class="event-row__time" title="Desde la carga de la página">${formatSinceLoad(h.t)}</span>` : ""}
+            ${multiInstance && h.instance ? `<span class="rule-row__count" title="${escapeHtml(T.instanceTitle)}">${escapeHtml(h.instance)}</span>` : ""}
+            ${Number.isFinite(h.t) ? `<span class="event-row__time" title="${escapeHtml(T.sinceLoad)}">${formatSinceLoad(h.t)}</span>` : ""}
           </div>
           <div class="hit-row__title">${escapeHtml(title)}</div>
           ${meta.map((m) => `<div class="hit-row__meta">${m}</div>`).join("")}
@@ -2097,7 +2071,7 @@ document.getElementById("hits-list").addEventListener("click", (e) => {
   if (!btn) return;
   const value = hitBlockValue(btn.dataset.copyHit);
   if (value === undefined || value === null) return;
-  copyText(hitJson(value), btn.dataset.copyHit.endsWith("|req") ? "Request copiado." : "Response copiada.");
+  copyText(hitJson(value), btn.dataset.copyHit.endsWith("|req") ? T.requestCopied : T.responseCopied);
 });
 
 document.getElementById("hits-filters").addEventListener("click", (e) => {

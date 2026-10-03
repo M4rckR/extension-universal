@@ -12,7 +12,7 @@ Textos listos para pegar en el panel de desarrollador
 | --- | --- |
 | Paquete | `dist/alloyscope-2.3.0.zip` |
 | Ícono de la tienda (128×128) | `assets/icon128.png` |
-| Capturas (1280×800) | `store/screenshots/1-actividades.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-eventos.jpg` |
+| Capturas (1280×800) | Ficha en español: `store/screenshots/1-actividades.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-eventos.jpg`. Ficha en inglés: `store/screenshots/en/1-activities.jpg`, `2-hits.jpg`, `3-launch.jpg`, `4-events.jpg` |
 | Idiomas | Inglés (por defecto) y español — una ficha por idioma, ver "Versión en inglés" |
 | Categoría | Herramientas para desarrolladores |
 
@@ -46,6 +46,8 @@ Las capturas usan datos de ejemplo (una tienda ficticia), no un sitio real.
 > También muestra el datastream y el orgId de la instancia de Alloy activa, para confirmar que la página apunta a la configuración correcta.
 >
 > Privacidad: todo lo capturado se guarda solo en tu navegador (chrome.storage.local). La extensión no envía datos a ningún servidor, no usa analítica y no carga recursos externos. Es solo de lectura: no modifica las páginas, no escribe cookies y no recarga nada.
+>
+> La interfaz está en español e inglés, según el idioma del navegador.
 >
 > Desarrollada por Marcos Romero, Ingeniero en Sistemas.
 >
@@ -83,7 +85,7 @@ nombre y el resumen salen del paquete (`extName` / `extDescription` de cada
 >
 > Privacy: everything captured stays in your browser (chrome.storage.local). The extension sends no data to any server, uses no analytics and loads no external resources. It is read-only: it does not modify pages, write cookies or reload anything.
 >
-> The interface is in Spanish.
+> The interface is available in English and Spanish, and follows your browser's language.
 >
 > Built by Marcos Romero, Systems Engineer.
 >
