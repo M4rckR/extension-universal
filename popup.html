@@ -360,6 +360,7 @@
       .list__note-action {
         background: none;
         border: none;
+        padding-block: 4px;
         color: var(--accent);
         font-weight: 600;
         font-size: var(--fs-sm);
@@ -461,7 +462,7 @@
       .activity__id {
         background: none;
         border: none;
-        padding: 0;
+        padding: 7px 0 1px;
         font: inherit;
         color: var(--ink-2);
         border-bottom: 1px dashed var(--line-strong);
@@ -475,9 +476,19 @@
         font-weight: 500;
         overflow-wrap: anywhere;
       }
+      .activity__render-error {
+        margin-top: 4px;
+        font-size: var(--fs-sm);
+        color: var(--danger-strong);
+        overflow-wrap: anywhere;
+      }
       .activity__display {
         color: var(--ok);
         font-family: var(--font-sans);
+      }
+      .activity__display--missing {
+        color: var(--warn-strong);
+        font-weight: 600;
       }
       .activity__separator {
         color: var(--ink-3);
@@ -538,62 +549,75 @@
       .mbox-dock:empty {
         display: none;
       }
+      /* Franja pintada con el mismo tinte que la barra de URL de arriba: las
+         dos enmarcan la lista. Antes era una línea gris más y no se veía. */
       .mbox-section {
-        border-top: 1px solid var(--line);
-      }
-      /* Abierta, las filas scrollean adentro: la lista de actividades de
-         arriba no pierde todo su alto. */
-      .mbox-section__rows {
-        max-height: 38vh;
-        overflow-y: auto;
-        scrollbar-width: thin;
-        scrollbar-color: var(--line-strong) transparent;
-        border-top: 1px solid var(--line);
+        border-top: 1px solid var(--accent-line);
       }
       .mbox-section__summary {
         display: flex;
         align-items: center;
         gap: 8px;
+        width: 100%;
         padding: 9px 16px;
-        background: var(--bg-alt);
+        border: none;
+        background: var(--bg-accent);
         font-size: var(--fs-sm);
         color: var(--ink-2);
-        cursor: pointer;
-        list-style: none;
+        text-align: left;
         font-variant-numeric: tabular-nums;
+        transition: background-color 0.1s;
       }
-      .mbox-section__summary::-webkit-details-marker {
-        display: none;
-      }
-      .mbox-section__summary:hover {
-        background: var(--bg-accent);
+      button.mbox-section__summary:hover {
+        background: var(--scope-vec-bg);
       }
       .mbox-section__summary:focus-visible {
         outline-offset: -2px;
       }
       /* Sin mboxes: la misma franja, pero no se abre (no hay nada adentro). */
       .mbox-section__summary--static {
-        cursor: default;
         align-items: baseline;
-      }
-      .mbox-section__summary--static:hover {
-        background: var(--bg-alt);
-      }
-      .mbox-section__summary b {
-        color: var(--ink);
-        font-weight: 600;
       }
       .mbox-section__title {
         font-weight: 600;
-        color: var(--ink);
+        color: var(--accent-strong);
+      }
+      .mbox-section__counts {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 6px;
+        min-width: 0;
+      }
+      .mbox-section__zero,
+      .mbox-section__dom {
+        font-size: var(--fs-tag);
+        color: var(--ink-3);
+        white-space: nowrap;
+      }
+      .mbox-section__dom {
+        margin-left: 2px;
       }
       .mbox-section__chevron {
         font-size: 12px;
-        color: var(--ink-3);
+        color: var(--accent-strong);
         transition: transform 0.15s;
       }
-      .mbox-section[open] .mbox-section__chevron {
+      .mbox-section--open .mbox-section__chevron {
         transform: rotate(90deg);
+      }
+      /* Abierta, las filas scrollean adentro: la lista de actividades de
+         arriba no pierde todo su alto. */
+      .mbox-section__rows {
+        display: none;
+        max-height: 38vh;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+        border-top: 1px solid var(--accent-line);
+      }
+      .mbox-section--open .mbox-section__rows {
+        display: block;
       }
 
       /* ── Resumen de una lista (Hits) ─────────────────────── */
@@ -842,10 +866,10 @@
       .rule-row__code {
         margin-top: 4px;
       }
-      .rule-row__section {
-        margin-top: 6px;
-        font-size: var(--fs-meta);
-        font-weight: 600;
+      .rule-row__actions {
+        margin-top: 2px;
+      }
+      .rule-row__actions > .raw-summary {
         color: var(--ink-2);
       }
       /* ── Fila de hit (pestaña Hits): una llamada de Alloy al Edge ── */
@@ -987,7 +1011,7 @@
         font-family: var(--font-mono);
         font-size: var(--fs-tag);
         font-weight: 500;
-        padding: 3px 10px;
+        padding: 4px 10px;
         border-radius: 20px;
         border: 1px solid var(--line-strong);
         background: var(--bg);
@@ -1162,7 +1186,9 @@
 
       /* ── Bloques compartidos de payload/contenido crudo (Eventos y
          Actividades usan el mismo <summary>/<pre> monoespaciado) ─── */
+      /* padding-block: el área de click llega a ~25px (medía 17px). */
       .raw-summary {
+        padding-block: 4px;
         font-size: var(--fs-sm);
         font-weight: 500;
         color: var(--accent);
@@ -1241,6 +1267,23 @@
         padding: 40px 24px;
         text-align: center;
       }
+      /* Diagnóstico que bloquea (consentimiento, at.js): mismo bloque, con
+         peso de advertencia — no debe confundirse con "todavía no hay datos". */
+      .empty-state--warn .empty-state__icon {
+        color: var(--warn);
+      }
+      .empty-state--warn .empty-state__text {
+        text-align: left;
+        text-wrap: pretty;
+        max-width: 46ch;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: var(--warn-bg);
+        color: var(--warn-strong);
+      }
+      .empty-state--warn .empty-state__text strong {
+        color: var(--warn-strong);
+      }
       .empty-state__icon {
         display: block;
         margin: 0 auto 10px;
@@ -1259,7 +1302,7 @@
       .inline-link {
         background: none;
         border: none;
-        padding: 0;
+        padding: 2px 0;
         font: inherit;
         font-weight: 600;
         color: var(--accent);

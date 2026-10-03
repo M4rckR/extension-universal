@@ -42,6 +42,7 @@ const ICON_PATHS = {
   target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
   filter: '<path d="M3 5h18l-7 8v6l-4-2v-4L3 5z"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
+  alert: '<path d="M12 3l9.5 16.5h-19L12 3z"/><path d="M12 10v4M12 17.2h.01"/>',
 };
 
 function iconSvg(name, className = "") {
@@ -52,13 +53,48 @@ function iconSvg(name, className = "") {
  * Markup de un estado vacío. `html` es texto fijo de la UI (o ya escapado por
  * quien llama) — nunca se le pasa un valor capturado de la página sin escapar.
  */
-function emptyStateHtml(icon, html, withInject = false) {
+function emptyStateHtml(icon, html, withInject = false, warn = false) {
   return `
-    <div class="empty-state">
+    <div class="empty-state${warn ? " empty-state--warn" : ""}">
       ${iconSvg(icon, "empty-state__icon")}
       <p class="empty-state__text">${html}</p>
       ${withInject ? `<button class="btn-inject">Capturar ahora</button>` : ""}
     </div>`;
+}
+
+// Cada actualización en vivo reemplaza el innerHTML de la lista, y con eso
+// el elemento enfocado desaparece: quien navega con teclado caía de vuelta
+// en <body> con cada hit o regla nueva. Antes de repintar se anota qué
+// estaba enfocado (el data-key más cercano + el control adentro) y después
+// se vuelve a enfocar su equivalente.
+const FOCUS_ATTRS = ["id", "data-copy", "data-copy-event", "data-copy-code", "data-copy-hit", "data-goto", "data-idx", "data-event", "data-status", "href"];
+
+function focusDescriptor(root) {
+  const el = document.activeElement;
+  if (!el || el === document.body || !root.contains(el)) return null;
+  const attr = FOCUS_ATTRS.find((a) => el.hasAttribute(a));
+  return {
+    key: el.closest("[data-key]")?.dataset.key,
+    selector: el.tagName.toLowerCase() + (el.classList[0] ? "." + CSS.escape(el.classList[0]) : ""),
+    attr,
+    value: attr ? el.getAttribute(attr) : null,
+  };
+}
+
+function restoreFocus(root, d) {
+  if (!d) return;
+  const scope = d.key ? [...root.querySelectorAll("[data-key]")].find((e) => e.dataset.key === d.key) : root;
+  if (!scope) return;
+  const target = d.attr
+    ? [...scope.querySelectorAll(`[${d.attr}]`)].find((e) => e.getAttribute(d.attr) === d.value)
+    : scope.querySelector(d.selector);
+  if (target) target.focus({ preventScroll: true });
+}
+
+/** ¿Hay señal de que la captura ya corre en esta página? (Alloy configurado, Launch detectado o respuestas guardadas). */
+function captureIsLive(data) {
+  const instances = Array.isArray(data.instanceInfo) ? data.instanceInfo : data.instanceInfo ? [data.instanceInfo] : [];
+  return instances.length > 0 || !!data.launchInfo || (data.requests || []).length > 0;
 }
 
 /** Estado del punto de la barra de URL: "ok" | "warn" | "error" | "idle". El texto de #page-url siempre nombra el mismo estado. */
@@ -335,7 +371,7 @@ function renderActivityContent(domAction, idx, activityId) {
     ["format", domAction.format],
     ["selector", domAction.selector],
     ["prehidingSelector", domAction.prehidingSelector],
-  ].filter(([, v]) => v != null);
+  ].filter(([, v]) => v != null && v !== "");
 
   const hasContent = typeof domAction.content === "string";
   if (fields.length === 0 && !hasContent) return "";
@@ -364,7 +400,7 @@ function renderActivityContent(domAction, idx, activityId) {
   const key = String(activityId);
   return `
     <details class="activity__content" data-key="${escapeHtml(key)}"${openActivityContent.has(key) ? " open" : ""}>
-      <summary class="raw-summary">Ver contenido</summary>
+      <summary class="raw-summary" aria-label="Ver contenido de la actividad ${escapeHtml(key)}">Ver contenido</summary>
       <div class="activity__content-meta">${metaHtml}</div>
       ${bodyHtml}
     </details>
@@ -464,8 +500,11 @@ const CONSENT_COOKIE_RE = /consent|politica|privacidad|privacy|gdpr|optanon|cook
 const TARGET_RULE_RE = /target|personaliz|alloy|web ?sdk|aep/i;
 
 /**
- * Por qué Actividades está vacía, cuando los datos lo dicen. Devuelve HTML
- * (todo valor capturado escapado) o "" si no hay nada que explicar. En orden:
+ * Por qué Actividades está vacía, cuando los datos lo dicen. Devuelve
+ * { html, warn } (todo valor capturado escapado) o null si no hay nada que
+ * explicar. `warn` marca los motivos que bloquean (at.js, consentimiento):
+ * se pintan como advertencia y el indicador de la URL pasa a naranja, en vez
+ * de verse igual que el "Sin capturas aún" neutro. En orden:
  *   1. at.js sin Alloy: la extensión inspecciona Web SDK (medido en
  *      allianz.com, canada.ca, pwc.com, whirlpool.com, infosys.com).
  *   2. Una regla de Target que no corrió por una cookie de consentimiento
@@ -477,14 +516,14 @@ const TARGET_RULE_RE = /target|personaliz|alloy|web ?sdk|aep/i;
  * motivo: en nvidia.com o whirlpool.com hay decenas, de otras páginas, y
  * señalar una era engañoso.
  */
-function whyNoActivitiesHtml(data) {
+function whyNoActivities(data) {
   const instances = Array.isArray(data.instanceInfo) ? data.instanceInfo : data.instanceInfo ? [data.instanceInfo] : [];
   const hits = data.hits || [];
   const decisionCalls = hits.filter((h) => (h.scopes || []).length > 0 || (h.eventTypes || []).includes("decisioning.propositionFetch"));
 
   if (data.pageSdk?.atjs && instances.length === 0) {
     const v = data.pageSdk.atjsVersion ? ` ${escapeHtml(data.pageSdk.atjsVersion)}` : "";
-    return `Esta página usa <strong>at.js${v}</strong> (Adobe Target clásico), no Web SDK (Alloy).<br>La extensión inspecciona Web SDK: acá funcionan <button class="inline-link" data-goto="launch">Launch</button> y <button class="inline-link" data-goto="eventos">Eventos</button>, no Actividades.`;
+    return { warn: true, html: `Esta página usa <strong>at.js${v}</strong> (Adobe Target clásico), no Web SDK (Alloy).<br>La extensión inspecciona Web SDK: acá funcionan <button class="inline-link" data-goto="launch">Launch</button> y <button class="inline-link" data-goto="eventos">Eventos</button>, no Actividades.` };
   }
 
   const failed = (data.launchRules || []).filter((r) => r.status === "failed");
@@ -495,24 +534,24 @@ function whyNoActivitiesHtml(data) {
   if (decisionCalls.length === 0) {
     const targetRule = failed.find((r) => TARGET_RULE_RE.test(r.ruleName || "") && consentCond(r));
     if (targetRule) {
-      return `Launch no ejecutó la regla <strong>${escapeHtml(targetRule.ruleName)}</strong>: no se cumplió ${condText(consentCond(targetRule))}.<br>Parece la cookie de consentimiento: acepta las cookies del sitio y recarga.`;
+      return { warn: true, html: `Launch no ejecutó la regla <strong>${escapeHtml(targetRule.ruleName)}</strong>: no se cumplió ${condText(consentCond(targetRule))}.<br>Parece la cookie de consentimiento: acepta las cookies del sitio y recarga. <button class="inline-link" data-goto="launch" data-search="${escapeHtml(targetRule.ruleName)}">Ver la regla en Launch</button>` };
     }
     const consentBlocked = failed.filter(consentCond);
     if (consentBlocked.length > 0) {
-      return `${consentBlocked.length} ${consentBlocked.length === 1 ? "regla de Launch espera" : "reglas de Launch esperan"} una cookie de consentimiento (p. ej. ${condText(consentCond(consentBlocked[0]))}) y Alloy no pidió decisiones a Target.<br>Acepta las cookies del sitio y recarga.`;
+      return { warn: true, html: `${consentBlocked.length} ${consentBlocked.length === 1 ? "regla de Launch espera" : "reglas de Launch esperan"} una cookie de consentimiento (p. ej. ${condText(consentCond(consentBlocked[0]))}) y Alloy no pidió decisiones a Target.<br>Acepta las cookies del sitio y recarga.` };
     }
   }
 
   if (instances.length > 0) {
     if (decisionCalls.length > 0) {
       const noOffers = (data.renderEvents || []).some((e) => e.status === "no-offers");
-      return `Alloy pidió decisiones a Target${decisionCalls.length > 1 ? ` ${decisionCalls.length} veces` : ""}, pero no vino ninguna actividad para esta página${noOffers ? " (Alloy informó <span class=\"mono\">no-offers</span>)" : ""}.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se pidió y qué respondió.`;
+      return { warn: false, html: `Alloy pidió decisiones a Target${decisionCalls.length > 1 ? ` ${decisionCalls.length} veces` : ""}, pero no vino ninguna actividad para esta página${noOffers ? " (Alloy informó <span class=\"mono\">no-offers</span>)" : ""}.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se pidió y qué respondió.` };
     }
-    return hits.length > 0
+    return { warn: false, html: hits.length > 0
       ? `Alloy hizo ${hits.length} ${hits.length === 1 ? "llamada" : "llamadas"} al Edge, pero ninguna pidió decisiones a Target.<br>Abre <button class="inline-link" data-goto="hits">Hits</button> para ver qué se envió.`
-      : "Alloy está configurado, pero no envió ninguna llamada al Edge en esta carga.<br>Abre <button class=\"inline-link\" data-goto=\"launch\">Launch</button>: puede que la regla que lo dispara no se haya cumplido.";
+      : "Alloy está configurado, pero no envió ninguna llamada al Edge en esta carga.<br>Abre <button class=\"inline-link\" data-goto=\"launch\">Launch</button>: puede que la regla que lo dispara no se haya cumplido." };
   }
-  return "";
+  return null;
 }
 
 /** Clave de "misma página" para comparar la pestaña con lo capturado: incluye el query string (dos productos distintos bajo el mismo path no son la misma página), excluye el fragmento. */
@@ -526,7 +565,7 @@ function pageKey(url) {
  * Lee requests del storage, deduplica por activity.id y genera el listado.
  */
 function render(currentTabUrl) {
-  chrome.storage.local.get(["requests", "tabUrl", "renderEvents", "launchRules", "instanceInfo", "hits", "pageSdk", "domMboxes"], (data) => {
+  chrome.storage.local.get(["requests", "tabUrl", "renderEvents", "launchRules", "launchInfo", "instanceInfo", "hits", "pageSdk", "domMboxes"], (data) => {
     if (showBlockedIn("list")) return;
     const requests = data.requests || [];
     const tabUrl = data.tabUrl || "";
@@ -547,20 +586,22 @@ function render(currentTabUrl) {
     if (requests.length === 0) {
       // Con un motivo concreto no se ofrece "Capturar ahora": reinyectar no
       // arregla una cookie que falta ni una regla que no corrió.
-      const reason = whyNoActivitiesHtml(data);
-      list.innerHTML =
-        emptyStateHtml(
-          "signal",
-          reason ||
-            "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
-          !reason,
-        );
+      const reason = whyNoActivities(data);
+      list.innerHTML = emptyStateHtml(
+        reason?.warn ? "alert" : "signal",
+        reason?.html ||
+          "Sin capturas aún.<br>Recarga la página, o usa <strong>Capturar ahora</strong> si la pestaña ya estaba abierta antes de cargar la extensión.",
+        !reason,
+        !!reason?.warn,
+      );
       renderMboxDock([], data.domMboxes || []);
       count.textContent = "0 ACT";
       // Sin capturas no hay "última": tras Limpiar no debe quedar la hora vieja.
       ts.textContent = "—";
       pageUrl.textContent = hostAndPath(currentTabUrl) || "Sin página activa";
-      setIndicator(currentTabUrl ? "ok" : "idle");
+      // Verde solo si hay señal de que la captura está viva (Alloy
+      // configurado o Launch detectado); sin nada capturado, gris.
+      setIndicator(!currentTabUrl ? "idle" : reason?.warn ? "warn" : reason || captureIsLive(data) ? "ok" : "idle");
       return;
     }
 
@@ -593,12 +634,15 @@ function render(currentTabUrl) {
     // no-offers — medido en elpais.com, ibm.com, redhat.com): antes la lista
     // quedaba vacía con solo el aviso del tenant, sin decir nada.
     if (unique.length === 0) {
-      list.innerHTML =
-        emptyStateHtml(
-          "target",
-          whyNoActivitiesHtml(data) ||
-            `Alloy recibió ${requests.length} ${requests.length === 1 ? "respuesta" : "respuestas"} del Edge, pero ninguna trajo actividades de Target para esta página.`,
-        );
+      const reason = whyNoActivities(data);
+      list.innerHTML = emptyStateHtml(
+        reason?.warn ? "alert" : "target",
+        reason?.html ||
+          `Alloy recibió ${requests.length} ${requests.length === 1 ? "respuesta" : "respuestas"} del Edge, pero ninguna trajo actividades de Target para esta página.`,
+        false,
+        !!reason?.warn,
+      );
+      if (reason?.warn) setIndicator("warn");
       renderMboxDock(requests, data.domMboxes || []);
       return;
     }
@@ -643,7 +687,7 @@ function render(currentTabUrl) {
         }
 
         return `
-        <div class="activity">
+        <div class="activity" data-key="act|${escapeHtml(id)}">
           <div class="activity__tags">
             <span class="scope-tag scope-tag--${scope.type}" title="${escapeHtml(scope.type === "vec" ? "Visual Experience Composer (__view__)" : scope.label)}">${escapeHtml(scope.label)}</span>
             ${actType ? `<span class="activity__type activity__type--${actType.toLowerCase()}" title="Tipo inferido del nombre de la actividad: el payload no lo informa">${actType === "AB" ? "A/B" : "XT"}</span>` : ""}
@@ -654,7 +698,9 @@ function render(currentTabUrl) {
             <button class="activity__id" data-copy="${escapeHtml(id)}" title="Copiar ID de la actividad">#${escapeHtml(id)}</button>
             ${exp ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__experience">${escapeHtml(exp)}</span>` : ""}
             ${knowsDisplay && notified ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display" title="Alloy notificó el display a Target: la impresión se cuenta">impresión notificada</span>` : ""}
+            ${knowsDisplay && !notified && rendered?.status === "ok" ? `<span class="activity__separator" aria-hidden="true">·</span><span class="activity__display activity__display--missing" title="Alloy la aplicó, pero en esta carga no notificó el display a Target: la impresión no se contó">impresión sin notificar</span>` : ""}
           </div>
+          ${rendered?.status === "failed" && rendered.error ? `<div class="activity__render-error">Error al renderizar: ${escapeHtml(rendered.error)}</div>` : ""}
           ${actionsHtml ? `<div class="activity__actions">${actionsHtml}</div>` : ""}
           ${domAction ? renderActivityContent(domAction, idx, id) : ""}
         </div>
@@ -673,6 +719,7 @@ function render(currentTabUrl) {
       : "";
 
     const scrollTop = list.scrollTop;
+    const focused = focusDescriptor(list);
     list.innerHTML =
       prehidingNoteHtml(renderState.prehiding) +
       displayNote +
@@ -680,6 +727,7 @@ function render(currentTabUrl) {
       rowsHtml;
     renderMboxDock(requests, data.domMboxes || []);
     list.scrollTop = scrollTop;
+    restoreFocus(list, focused);
   });
 }
 
@@ -1000,9 +1048,11 @@ function renderMboxDock(requests, domMboxes) {
   const dock = document.getElementById("mbox-dock");
   const scroller = dock.querySelector(".mbox-section__rows");
   const scrollTop = scroller ? scroller.scrollTop : 0;
+  const focused = focusDescriptor(dock);
   dock.innerHTML = mboxSectionHtml(requests, domMboxes);
   const next = dock.querySelector(".mbox-section__rows");
   if (next) next.scrollTop = scrollTop;
+  restoreFocus(dock, focused);
 }
 
 function mboxSectionHtml(requests, domMboxes) {
@@ -1010,10 +1060,12 @@ function mboxSectionHtml(requests, domMboxes) {
   // se guardaba solo la primera, y bbva.pe mostraba una actividad distinta a
   // las dos que Actividades listaba para el mismo scope).
   const activeMboxes = new Map();
+  let hasVec = false;
   requests.forEach((r) => {
     const decisions =
       r.payload?.handle?.filter((h) => h.type === "personalization:decisions")?.flatMap((h) => h.payload) || [];
     decisions.forEach((d) => {
+      if (d.scope === "__view__") hasVec = true;
       if (!d.scope || d.scope === "__view__") return;
       const name = d.items?.[0]?.meta?.["activity.name"] || d.scopeDetails?.activity?.name || null;
       if (!activeMboxes.has(d.scope)) activeMboxes.set(d.scope, new Set());
@@ -1030,7 +1082,7 @@ function mboxSectionHtml(requests, domMboxes) {
     <div class="mbox-section mbox-section--empty">
       <div class="mbox-section__summary mbox-section__summary--static">
         <span class="mbox-section__title">mBoxes</span>
-        <span>Esta página no usa mboxes con nombre ni elementos <span class="mono">[data-mbox]</span>: todo corre por VEC (<span class="mono">__view__</span>).</span>
+        <span>Sin mboxes con nombre ni elementos <span class="mono">[data-mbox]</span> en esta página.${hasVec ? ` Todo corre por VEC (<span class="mono">__view__</span>).` : ""}</span>
       </div>
     </div>`;
   }
@@ -1040,12 +1092,16 @@ function mboxSectionHtml(requests, domMboxes) {
   const enUso = [...domSet].filter((m) => activeSet.has(m)).length;
   const libres = domSet.size - enUso;
   const soloAlloy = [...activeSet].filter((m) => !domSet.has(m)).length;
+  // Cada contador usa el mismo badge que las filas de adentro (verde solo para
+  // "en uso"); en cero va como texto, para que el color señale lo que hay.
+  const pill = (n, label, cls) =>
+    n > 0 ? `<span class="status-badge ${cls}">${n} ${label}</span>` : `<span class="mbox-section__zero">${n} ${label}</span>`;
   const summary = [
-    `<b>${enUso}</b> en uso`,
-    `<b>${libres}</b> ${libres === 1 ? "libre" : "libres"}`,
-    `<b>${soloAlloy}</b> solo Alloy`,
-    `<span title="Elementos [data-mbox] encontrados en la página">${domSet.size} en el DOM</span>`,
-  ].join(" · ");
+    pill(enUso, "en uso", "status-badge--active"),
+    pill(libres, libres === 1 ? "libre" : "libres", "status-badge--free"),
+    pill(soloAlloy, "solo Alloy", "status-badge--alloy"),
+    `<span class="mbox-section__dom" title="Elementos [data-mbox] encontrados en la página">${domSet.size} en el DOM</span>`,
+  ].join("");
 
   // Orden: activos primero, luego libres; alfabético dentro de cada grupo
   const sorted = [...allMboxes].sort((a, b) => {
@@ -1090,14 +1146,14 @@ function mboxSectionHtml(requests, domMboxes) {
     .join("");
 
   return `
-    <details class="mbox-section"${mboxSectionOpen ? " open" : ""}>
-      <summary class="mbox-section__summary">
+    <div class="mbox-section${mboxSectionOpen ? " mbox-section--open" : ""}">
+      <button class="mbox-section__summary" aria-expanded="${mboxSectionOpen}" aria-controls="mbox-rows">
         ${iconSvg("chevron", "mbox-section__chevron")}
         <span class="mbox-section__title">mBoxes</span>
-        <span>${summary}</span>
-      </summary>
-      <div class="mbox-section__rows">${rows}</div>
-    </details>`;
+        <span class="mbox-section__counts">${summary}</span>
+      </button>
+      <div class="mbox-section__rows" id="mbox-rows">${rows}</div>
+    </div>`;
 }
 
 /**
@@ -1216,7 +1272,7 @@ function renderEventRow(e) {
       ${title ? `<div class="event-row__title">${escapeHtml(title)}</div>` : ""}
       ${meta.length ? `<div class="event-row__meta">${meta.map(escapeHtml).join(" · ")}</div>` : ""}
       <details class="event-row__raw" data-key="${escapeHtml(eventKey(e))}"${openEventPayloads.has(eventKey(e)) ? " open" : ""}>
-        <summary class="raw-summary">Payload</summary>
+        <summary class="raw-summary" aria-label="Payload de ${escapeHtml(eventName)}">Payload</summary>
         <pre class="raw-pre">${escapeHtml(rawJson)}</pre>
         <button class="btn-copy-content" data-copy-event="${escapeHtml(eventKey(e))}">Copiar payload</button>
       </details>
@@ -1312,7 +1368,7 @@ function renderEventGroupsHtml(events) {
  * varios trackScroll seguidos) se colapsan en una fila expandible.
  */
 function renderEventos() {
-  chrome.storage.local.get("digitalDataEvents", (data) => {
+  chrome.storage.local.get(["digitalDataEvents", "instanceInfo", "launchInfo", "requests"], (data) => {
     if (showBlockedIn("event-list")) return;
     const events = data.digitalDataEvents || [];
     const list = document.getElementById("event-list");
@@ -1321,10 +1377,16 @@ function renderEventos() {
 
     if (events.length === 0) {
       filters.innerHTML = "";
+      // Si ya hay captura de Alloy o Launch en esta página, reinyectar no
+      // aporta: lo que falta es que la página haga push (bbva.pe usa un
+      // digitalData objeto plano, que a propósito no se engancha).
+      const live = captureIsLive(data);
       list.innerHTML = emptyStateHtml(
         "list",
-        "Sin eventos aún.<br>Interactúa con la página para ver los pushes a la capa de datos (digitalData o adobeDataLayer).",
-        true,
+        live
+          ? "Sin eventos aún.<br>La captura está activa: esta página todavía no hizo <span class=\"mono\">push</span> a <span class=\"mono\">digitalData</span> ni a <span class=\"mono\">adobeDataLayer</span> (o usa otra capa de datos)."
+          : "Sin eventos aún.<br>Interactúa con la página para ver los pushes a la capa de datos (digitalData o adobeDataLayer).",
+        !live,
       );
       return;
     }
@@ -1337,12 +1399,14 @@ function renderEventos() {
       if (!eventFilterState.has(key)) eventFilterState.set(key, true);
     });
 
+    const filterFocus = focusDescriptor(filters);
     filters.innerHTML = [...counts.entries()]
       .map(([key, count]) => {
         const active = eventFilterState.get(key);
         return `<button class="event-filter${active ? " event-filter--active" : ""}" data-event="${escapeHtml(key)}" aria-pressed="${!!active}">${escapeHtml(key)} · ${count}</button>`;
       })
       .join("");
+    restoreFocus(filters, filterFocus);
 
     const byChip = events.filter((e) => eventFilterState.get(getEventSummary(e.payload).eventName));
     const visible = eventSearch ? byChip.filter((e) => eventMatchesSearch(e, eventSearch)) : byChip;
@@ -1358,6 +1422,7 @@ function renderEventos() {
     lastRenderedEvents = new Map(visible.map((e) => [eventKey(e), e]));
 
     const scrollTop = list.scrollTop;
+    const focused = focusDescriptor(list);
     list.innerHTML = groupEventsByPage(visible)
       .map((pageGroup, pageIdx) => {
         const label = formatPageLabel(pageGroup.key);
@@ -1380,6 +1445,7 @@ function renderEventos() {
       })
       .join("");
     list.scrollTop = scrollTop;
+    restoreFocus(list, focused);
   });
 }
 
@@ -1536,7 +1602,7 @@ function fillOpenCodeBlocks(list) {
  * estaba abierto): hay acciones de hasta 12000 caracteres y re-escaparlas
  * todas en cada tanda de reglas hacía pesado el re-render.
  */
-function codeBlockHtml(item, key) {
+function codeBlockHtml(item, key, owner = "") {
   const length = Number.isFinite(item.codeLength) ? item.codeLength : (item.code || "").length;
   if (!length) return "";
   const isCode = item.kind === "customCode";
@@ -1544,7 +1610,7 @@ function codeBlockHtml(item, key) {
   const open = openRuleCode.has(key);
   return `
     <details class="rule-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
-      <summary class="raw-summary">${isCode ? "Ver código" : "Ver configuración"}${escapeHtml(lang)}</summary>
+      <summary class="raw-summary"${owner ? ` aria-label="${isCode ? "Ver código" : "Ver configuración"} de ${escapeHtml(owner)}"` : ""}>${isCode ? "Ver código" : "Ver configuración"}${escapeHtml(lang)}</summary>
       <pre class="raw-pre"></pre>
       ${item.codeTruncated ? `<div class="activity__content-note">Recortado a ${length} caracteres: el código completo está en la librería de Launch de la página.</div>` : ""}
       <button class="btn-copy-content" data-copy-code="${escapeHtml(key)}">${isCode ? "Copiar código" : "Copiar configuración"}</button>
@@ -1553,7 +1619,7 @@ function codeBlockHtml(item, key) {
 
 /** Línea de una condición fallida + su código o configuración, colapsado. */
 function renderConditionHtml(rule, c, i) {
-  return `<div class="rule-row__cond">${formatCondition(c)}</div>${codeBlockHtml(c, `${rule.key}|c|${i}`)}`;
+  return `<div class="rule-row__cond">${formatCondition(c)}</div>${codeBlockHtml(c, `${rule.key}|c|${i}`, `la condición ${c.kind || ""} de ${rule.ruleName || ""}`)}`;
 }
 
 /** Línea de una acción (ejecutada, o que habría ejecutado una regla fallida) + su código, configuración o URL externa. */
@@ -1563,7 +1629,7 @@ function renderActionHtml(rule, a, i) {
   const external = a.externalUrl
     ? ` · <a class="rule-row__link" href="${escapeHtml(a.externalUrl)}" target="_blank" rel="noopener" title="${escapeHtml(a.externalUrl)}">código externo ↗</a>`
     : "";
-  return `<div class="rule-row__cond"><span aria-hidden="true">→</span> <b>${escapeHtml(head)}</b>${external}</div>${codeBlockHtml(a, `${rule.key}|a|${i}`)}`;
+  return `<div class="rule-row__cond"><span aria-hidden="true">→</span> <b>${escapeHtml(head)}</b>${external}</div>${codeBlockHtml(a, `${rule.key}|a|${i}`, `la acción ${a.kind || ""} de ${rule.ruleName || ""}`)}`;
 }
 
 function ruleMatchesSearch(rule, query) {
@@ -1639,6 +1705,7 @@ function renderLaunch() {
       return;
     }
 
+    const filterFocus = focusDescriptor(filters);
     filters.innerHTML = ["completed", "failed"]
       .map((status) => {
         const count = rules.filter((r) => r.status === status).length;
@@ -1646,6 +1713,7 @@ function renderLaunch() {
         return `<button class="event-filter${active ? " event-filter--active" : ""}" data-status="${status}" aria-pressed="${active}">${RULE_STATUS[status].chip} · ${count}</button>`;
       })
       .join("");
+    restoreFocus(filters, filterFocus);
 
     // Con búsqueda activa primero se trae el código (el buscador también lo mira).
     if (launchSearch) loadAllLaunchCode(() => paintLaunchRules(rules));
@@ -1667,10 +1735,14 @@ function paintLaunchRules(rules) {
     return;
   }
 
-  // Orden de la página: la primera vez que se disparó cada regla.
-  const sorted = [...visible].sort((a, b) => (a.firstT ?? Infinity) - (b.firstT ?? Infinity));
+  // Completadas primero (lo que SÍ corrió en esta página), después las no
+  // cumplidas; dentro de cada grupo, en el orden en que se dispararon. Antes
+  // iban mezcladas y en viabcp.com 71 de 81 filas eran reglas de otras páginas.
+  const rank = (r) => (r.status === "completed" ? 0 : 1);
+  const sorted = [...visible].sort((a, b) => rank(a) - rank(b) || (a.firstT ?? Infinity) - (b.firstT ?? Infinity));
   lastRenderedRules = new Map(sorted.map((r) => [r.key, r]));
   const scrollTop = list.scrollTop;
+  const focused = focusDescriptor(list);
   list.innerHTML = sorted
     .map((r) => {
       const s = RULE_STATUS[r.status];
@@ -1679,16 +1751,23 @@ function paintLaunchRules(rules) {
       // Completadas: lo que ejecutaron.
       const conditions = r.status === "failed" ? r.conditions || [] : [];
       const actions = r.actions || [];
-      const actionsLabel =
+      // En las no cumplidas las acciones van colapsadas: no corrieron, y
+      // abiertas triplicaban el alto de filas que casi nunca se miran.
+      const actionsHtml = actions.map((a, i) => renderActionHtml(r, a, i)).join("");
+      const actsKey = `${r.key}|acts`;
+      const actionsBlock =
         r.status === "failed" && actions.length
-          ? `<div class="rule-row__section" title="La condición no se cumplió, así que estas acciones no corrieron en esta página">Acciones (no se ejecutaron)</div>`
-          : "";
+          ? `<details class="rule-row__actions" data-key="${escapeHtml(actsKey)}"${openRuleCode.has(actsKey) ? " open" : ""}>
+               <summary class="raw-summary" aria-label="Acciones que no se ejecutaron de ${escapeHtml(name)}" title="La condición no se cumplió, así que estas acciones no corrieron en esta página">${actions.length === 1 ? "1 acción que no se ejecutó" : `${actions.length} acciones que no se ejecutaron`}</summary>
+               ${actionsHtml}
+             </details>`
+          : actionsHtml;
       const when = r.count > 1 && r.lastT > r.firstT
         ? `${formatSinceLoad(r.firstT)} → ${formatSinceLoad(r.lastT)}`
         : formatSinceLoad(r.firstT);
       // Nombre de regla, ID y condiciones salen de la librería de Launch de la página: se escapan.
       return `
-      <div class="rule-row">
+      <div class="rule-row" data-key="${escapeHtml(r.key)}|row">
         <div class="rule-row__header">
           <span class="status-badge ${s.badge}" title="${escapeHtml(s.title)}">${s.label}</span>
           ${r.count > 1 ? `<span class="rule-row__count" title="Veces que se disparó">×${r.count}</span>` : ""}
@@ -1696,13 +1775,13 @@ function paintLaunchRules(rules) {
         </div>
         <div class="rule-row__name" title="${escapeHtml(name)}${r.ruleId ? " · " + escapeHtml(r.ruleId) : ""}">${escapeHtml(name)}</div>
         ${conditions.map((c, i) => renderConditionHtml(r, c, i)).join("")}
-        ${actionsLabel}
-        ${actions.map((a, i) => renderActionHtml(r, a, i)).join("")}
+        ${actionsBlock}
       </div>
     `;
     })
     .join("");
   list.scrollTop = scrollTop;
+  restoreFocus(list, focused);
   fillOpenCodeBlocks(list);
 }
 
@@ -1730,6 +1809,11 @@ document.getElementById("launch-list").addEventListener("click", (e) => {
 document.getElementById("launch-list").addEventListener(
   "toggle",
   (e) => {
+    if (e.target.classList?.contains("rule-row__actions")) {
+      if (e.target.open) openRuleCode.add(e.target.dataset.key);
+      else openRuleCode.delete(e.target.dataset.key);
+      return;
+    }
     if (!e.target.classList?.contains("rule-row__code")) return;
     const key = e.target.dataset.key;
     if (e.target.open) {
@@ -1784,14 +1868,14 @@ function hitJson(value) {
 }
 
 /** Desplegable de Request o Response de un hit; el <pre> se llena al abrir, como en Launch. */
-function hitBlockHtml(h, which, value) {
+function hitBlockHtml(h, which, value, title = "") {
   if (value === undefined || value === null) return "";
   const key = `${h.requestId}|${which}`;
   const open = openHitBlocks.has(key);
   const label = which === "req" ? "Request" : "Response";
   return `
     <details class="hit-row__code" data-key="${escapeHtml(key)}"${open ? " open" : ""}>
-      <summary class="raw-summary">${label}</summary>
+      <summary class="raw-summary"${title ? ` aria-label="${label} de ${escapeHtml(title)}"` : ""}>${label}</summary>
       <pre class="raw-pre">${open ? escapeHtml(hitJson(value)) : ""}</pre>
       <button class="btn-copy-content" data-copy-hit="${escapeHtml(key)}">Copiar ${label.toLowerCase()}</button>
     </details>`;
@@ -1804,7 +1888,7 @@ function hitBlockValue(key) {
 }
 
 function renderHits() {
-  chrome.storage.local.get(["hits", "requests"], (data) => {
+  chrome.storage.local.get(["hits", "requests", "instanceInfo", "launchInfo"], (data) => {
     if (showBlockedIn("hits-list")) return;
     const hits = data.hits || [];
     const list = document.getElementById("hits-list");
@@ -1812,10 +1896,13 @@ function renderHits() {
 
     if (hits.length === 0) {
       summary.hidden = true;
+      const live = captureIsLive(data);
       list.innerHTML = emptyStateHtml(
         "signal",
-        "Sin llamadas al Edge en esta carga.<br>Recarga la página con la extensión activa: Alloy hace sus llamadas al cargar.",
-        true,
+        live
+          ? "Sin llamadas al Edge en esta carga.<br>La captura está activa, pero Alloy no envió nada: puede que la regla que lo dispara no se haya cumplido. <button class=\"inline-link\" data-goto=\"launch\">Ver Launch</button>"
+          : "Sin llamadas al Edge en esta carga.<br>Recarga la página con la extensión activa: Alloy hace sus llamadas al cargar.",
+        !live,
       );
       return;
     }
@@ -1851,6 +1938,7 @@ function renderHits() {
 
     const multiInstance = new Set(hits.map((h) => h.instance)).size > 1;
     const scrollTop = list.scrollTop;
+    const focused = focusDescriptor(list);
     // Todo lo que sale del hit (endpoint, eventTypes, scopes, IDs, instancia) viene de la página: se escapa.
     list.innerHTML = hits
       .map((h) => {
@@ -1881,7 +1969,7 @@ function renderHits() {
                .join("")}</ul>`
           : "";
         return `
-        <div class="hit-row">
+        <div class="hit-row" data-key="${escapeHtml(h.requestId)}|row">
           <div class="hit-row__header">
             <span class="event-tag" title="${escapeHtml(h.url || "")}">${escapeHtml(h.endpoint || "?")}</span>
             ${hitStatusBadge(h)}
@@ -1892,13 +1980,14 @@ function renderHits() {
           ${meta.map((m) => `<div class="hit-row__meta">${m}</div>`).join("")}
           ${displayed}
           ${h.error ? `<div class="hit-row__meta">Error: ${escapeHtml(h.error)}</div>` : ""}
-          ${hitBlockHtml(h, "req", h.body)}
-          ${hitBlockHtml(h, "res", lastHitResponses.get(h.requestId))}
+          ${hitBlockHtml(h, "req", h.body, title)}
+          ${hitBlockHtml(h, "res", lastHitResponses.get(h.requestId), title)}
         </div>
       `;
       })
       .join("");
     list.scrollTop = scrollTop;
+    restoreFocus(list, focused);
   });
 }
 
@@ -1934,18 +2023,26 @@ document.addEventListener("click", (e) => {
   if (!btn) return;
   const tab = tabItems.find((t) => t.dataset.tab === btn.dataset.goto);
   if (!tab) return;
+  // data-search: llega a Launch con la regla nombrada ya filtrada.
+  if (btn.dataset.goto === "launch" && btn.dataset.search) {
+    launchSearch = btn.dataset.search;
+    document.getElementById("launch-search").value = launchSearch;
+    launchFilterState.completed = launchFilterState.failed = true;
+  }
   activateTab(tab);
   tab.focus();
 });
 
-// Sección mBoxes de Actividades: recuerda si quedó abierta entre repintadas.
-document.getElementById("mbox-dock").addEventListener(
-  "toggle",
-  (e) => {
-    if (e.target.classList?.contains("mbox-section")) mboxSectionOpen = e.target.open;
-  },
-  true,
-);
+// Franja mBoxes: un <button aria-expanded> (no <details>: el <summary>
+// nativo quedaba con el anillo de foco pegado después de un click con mouse).
+// El estado se recuerda entre repintadas.
+document.getElementById("mbox-dock").addEventListener("click", (e) => {
+  const btn = e.target.closest("button.mbox-section__summary");
+  if (!btn) return;
+  mboxSectionOpen = !mboxSectionOpen;
+  btn.closest(".mbox-section").classList.toggle("mbox-section--open", mboxSectionOpen);
+  btn.setAttribute("aria-expanded", String(mboxSectionOpen));
+});
 
 // ── Live update: re-renderiza cuando cambia el storage ───────────────────────
 // Las pintadas en vivo se agrupan: durante la carga de una página llegan
@@ -1971,7 +2068,7 @@ function scheduleLiveRender(tab, fn) {
 
 const LIVE_TABS = {
   actividades: {
-    keys: ["requests", "renderEvents", "launchRules", "hits", "pageSdk", "domMboxes"],
+    keys: ["requests", "renderEvents", "launchRules", "launchInfo", "hits", "pageSdk", "domMboxes"],
     render: () => getInspectedTab((tab) => render(tab?.url || "")),
   },
   eventos: { keys: ["digitalDataEvents"], render: () => renderEventos() },
