@@ -36,8 +36,10 @@ inject.js  (world: MAIN, run_at: document_start)
   │    Re-checked every 100ms for 30s, since the library replaces the queue function.
   ├─ Scans [data-mbox] DOM nodes (+ MutationObserver, 200ms debounce, for SPAs)
   ├─ Hooks .push on window.digitalData AND window.adobeDataLayer (two-layer defineProperty,
-  │    see inject.js); items already in the array when hooked are reported once. Each push
-  │    carries `layer`, stored on the event.
+  │    see inject.js); items already in the array when hooked are reported once, zero-arg
+  │    push() calls are ignored. Only arrays or objects that already have their own push are
+  │    hooked — a plain-object digitalData (W3C style, e.g. bbva.pe) is left untouched.
+  │    Each push carries `layer`, stored on the event.
   ├─ Whole file is one IIFE: nothing leaks into the page's globals except the guard,
   │    __alloyMonitors and the two data-layer accessors. Each section has its own try/catch.
   └─ Wrapped in a window.__mboxInspectorInjected guard — safe to reinject on demand
@@ -71,7 +73,7 @@ background.js (service worker)
        keeps the pointer so the next click can retarget)
 ```
 
-Message types (`content.js` switches on `event.data.type`): `alloyResponse` (full payload, unshifted onto `requests`, capped at 50), `domMboxes` (union-merged into `domMboxes`), `decisionScopes` (also merged into `domMboxes`, `__view__` filtered out), `instanceInfo` (orgId/edgeConfigId/edgeDomain, overwrites the single stored value), `digitalDataPush` (unshifted onto `digitalDataEvents` with `pageUrl` attached, capped at 500).
+Message types (`content.js` switches on `event.data.type`): `alloyResponse` (full payload, unshifted onto `requests`, capped at 50), `domMboxes` (union-merged into `domMboxes`), `decisionScopes` (also merged into `domMboxes`, `__view__` filtered out), `instanceInfo` (orgId/edgeConfigId/edgeDomain, merged into a **list keyed by instance name** — sites like bbva.pe run two Alloy instances with different datastreams; the footer shows "N instancias" with all of them in the tooltip; a legacy single-object value is read as a one-item list), `digitalDataPush` (unshifted onto `digitalDataEvents` with `pageUrl` attached, capped at 500).
 
 ### Event persistence (`digitalDataEvents` survives navigation)
 

@@ -243,10 +243,12 @@ function handleInjectedMessage(event) {
     });
   }
 
-  // Config de la instancia de Alloy: orgId, datastream/edge config, edge
-  // domain. Es un set() puro (sin get previo), pero igual pasa por la cola:
-  // si llegaba mientras el reset de "cambio de página" de arriba estaba
-  // pendiente, el reset lo pisaba con null y el footer quedaba vacío.
+  // Config de cada instancia de Alloy: orgId, datastream/edge config, edge
+  // domain. Se guarda una LISTA, una entrada por nombre de instancia: hay
+  // sitios con dos instancias (p. ej. "alloy" para analítica y otra para
+  // Target, cada una con su datastream) y guardando un solo valor la última
+  // en configurarse pisaba a la otra. get→merge→set: pasa por la cola, como
+  // el resto (y así el reset de "cambio de página" tampoco la pisa con null).
   if (event.data.type === "instanceInfo") {
     const p = event.data.payload || {};
     const info = {
@@ -255,7 +257,13 @@ function handleInjectedMessage(event) {
       edgeConfigId: shortString(p.edgeConfigId),
       edgeDomain: shortString(p.edgeDomain),
     };
-    enqueueStorageTask(() => safeStorageSet({ instanceInfo: info }));
+    enqueueStorageTask(async () => {
+      const data = await safeStorageGet("instanceInfo");
+      // Valor viejo (un solo objeto, versiones anteriores) → lista de uno.
+      const prev = Array.isArray(data.instanceInfo) ? data.instanceInfo : data.instanceInfo ? [data.instanceInfo] : [];
+      const list = prev.filter((i) => i && i.namespace !== info.namespace).concat(info).slice(-10);
+      await safeStorageSet({ instanceInfo: list });
+    });
   }
 
   // Push crudo a window.digitalData (Adobe Client Data Layer), capturado

@@ -222,7 +222,9 @@ function reportPush(layer, payload) {
 function wrapPush(realPush, layer) {
   if (typeof realPush !== "function" || realPush.__mboxWrapped) return realPush;
   const wrapped = function (...args) {
-    reportPush(layer, args.length === 1 ? args[0] : args);
+    // push() sin argumentos no agrega nada a la capa (visto en sitios reales):
+    // no se reporta, solo ensuciaba Eventos con entradas vacías.
+    if (args.length > 0) reportPush(layer, args.length === 1 ? args[0] : args);
     return realPush.apply(this, args);
   };
   wrapped.__mboxWrapped = true;
@@ -231,6 +233,11 @@ function wrapPush(realPush, layer) {
 
 function hookPushProperty(arr, layer) {
   if (!arr || typeof arr !== "object" || arr.__mboxPushHooked) return;
+  // Solo arrays o capas que ya tienen su propio push (ACDL). Hay sitios que
+  // usan digitalData como un objeto plano (estilo W3C: { page, user, … });
+  // antes se le agregaba una propiedad push que la página no tenía, lo que
+  // modificaba un objeto ajeno. Esos objetos no se tocan.
+  if (!Array.isArray(arr) && typeof arr.push !== "function") return;
   // Lo que la capa ya trae al engancharla (p. ej. `window.adobeDataLayer =
   // [{ event: "pageLoad", … }]`) nunca pasa por push: se reporta una vez acá.
   // Solo la primera vez — si la página reasigna el mismo array, el guard de

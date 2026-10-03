@@ -655,20 +655,30 @@ document.addEventListener("click", (e) => {
   });
 });
 
-/** Muestra orgId/edgeConfigId de la instancia de Alloy en el footer (si ya se capturó). */
+/**
+ * Muestra orgId/edgeConfigId de las instancias de Alloy en el footer (si ya
+ * se capturaron). content.js guarda una lista, una por instancia; con varias
+ * se muestra la primera y "+N", y el detalle de todas va en el tooltip.
+ */
 function renderInstanceInfo() {
   chrome.storage.local.get("instanceInfo", (data) => {
     const el = document.getElementById("edge-info");
-    const info = data.instanceInfo;
-    if (!info) {
+    const raw = data.instanceInfo;
+    const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter(Boolean);
+    if (list.length === 0) {
       // La versión sale del manifest: una sola fuente, sin string duplicado acá.
       el.textContent = `v${chrome.runtime.getManifest().version} · Target Inspector`;
       el.title = "";
       return;
     }
-    const shortEdge = info.edgeConfigId ? String(info.edgeConfigId).slice(0, 8) : "?";
-    el.textContent = `datastream ${shortEdge}`;
-    el.title = `datastream: ${info.edgeConfigId || "?"} · orgId: ${info.orgId || "?"} · edgeDomain: ${info.edgeDomain || "?"}`;
+    const shortEdge = (info) => (info.edgeConfigId ? String(info.edgeConfigId).slice(0, 8) : "?");
+    el.textContent =
+      list.length === 1
+        ? `datastream ${shortEdge(list[0])}`
+        : `${list.length} instancias · ${list.map(shortEdge).join(" · ")}`;
+    el.title = list
+      .map((i) => `${i.namespace || "?"} → datastream: ${i.edgeConfigId || "?"} · orgId: ${i.orgId || "?"} · edgeDomain: ${i.edgeDomain || "?"}`)
+      .join("\n");
   });
 }
 

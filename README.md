@@ -175,7 +175,7 @@ Todo se guarda localmente en `chrome.storage.local` (solo en tu navegador, nunca
 | `requests` | Últimas respuestas de Target (payload completo + URL + timestamp) | 50 entradas | No — foto del estado actual |
 | `domMboxes` | Nombres de mboxes encontrados en el DOM o pedidos vía `decisionScopes` | 500 nombres | No — foto del estado actual |
 | `digitalDataEvents` | Pushes crudos a `window.digitalData` / `window.adobeDataLayer` (payload + timestamp + tiempo desde carga + `pageUrl` de origen + `layer`) | 500 entradas | **Sí** — es un recorrido, no una foto (ver el porqué del límite abajo) |
-| `instanceInfo` | orgId/edgeConfigId/edgeDomain de la instancia de Alloy activa | — | No |
+| `instanceInfo` | orgId/edgeConfigId/edgeDomain de cada instancia de Alloy de la página (lista, una por nombre de instancia) | — | No |
 | `inspectorWindow` | Puntero `{windowId, tabId, sourceTabId}` de la ventana independiente abierta, si hay una | — | — |
 | `tabUrl` | URL de la última página capturada (para detectar cambios de página) | — | — |
 | `tenant` | Slug del tenant de Adobe Target configurado en el footer (para los deep-links) | — | Sí — es config del usuario, no de la página |
